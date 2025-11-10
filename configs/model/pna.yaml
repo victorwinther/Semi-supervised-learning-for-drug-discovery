@@ -1,0 +1,18 @@
+defaults:
+  - _self_
+
+name: pna
+
+init:
+  _target_: models.PNANet
+  _partial_: false
+  num_node_features: 11
+  hidden_channels: 128
+  out_channels: 1
+  num_layers: 5
+  dropout: 0.2
+  readout: add
+  aggregators: [mean, min, max, std]
+  scalers: [identity, amplification, attenuation]
+  edge_dim: null
+  deg: null

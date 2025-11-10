@@ -2,34 +2,69 @@ import torch
 import torch.nn.functional as F
 
 import torch.nn as nn
-from torch_geometric.nn import GCNConv, global_mean_pool, global_add_pool, GINConv
+from torch_geometric.nn import GCNConv, global_mean_pool, global_add_pool, GINConv, PNAConv
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union, Tuple, List
 import torch
 from torch import nn
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, num_node_features, hidden_channels=64):
+    def __init__(self, num_node_features, hidden_channels=64, num_layers=3, dropout=0.2):
         super(GCN, self).__init__()
-        self.conv1 = GCNConv(num_node_features, hidden_channels)
-        self.conv2 = GCNConv(hidden_channels, hidden_channels)
-        self.linear = torch.nn.Linear(hidden_channels, 1)
+        
+        self.num_layers = num_layers
+        self.dropout = dropout
+        
+        # Input layer
+        self.convs = nn.ModuleList()
+        self.batch_norms = nn.ModuleList()
+        
+        # First layer
+        self.convs.append(GCNConv(num_node_features, hidden_channels))
+        self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
+        
+        # Hidden layers
+        for _ in range(num_layers - 2):
+            self.convs.append(GCNConv(hidden_channels, hidden_channels))
+            self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
+        
+        # Last GCN layer
+        self.convs.append(GCNConv(hidden_channels, hidden_channels))
+        self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
+        
+        # MLP head for regression
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_channels, hidden_channels // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_channels // 2, 1)
+        )
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
 
-        # 1. Obtain node embeddings
-        x = self.conv1(x, edge_index)
-        x = x.relu()
-        x = self.conv2(x, edge_index)
+        # Message passing with residual connections
+        for i, (conv, bn) in enumerate(zip(self.convs, self.batch_norms)):
+            x_new = conv(x, edge_index)
+            x_new = bn(x_new)
+            x_new = F.relu(x_new)
+            x_new = F.dropout(x_new, p=self.dropout, training=self.training)
+            
+            # Add residual connection (skip connection) after first layer
+            if i > 0:
+                x = x + x_new
+            else:
+                x = x_new
 
-        # 2. Readout layer
-        x = global_mean_pool(x, batch)  # [batch_size, hidden_channels]
+        # Global pooling (combine mean and max pooling)
+        x_mean = global_mean_pool(x, batch)
+        x_max = global_add_pool(x, batch)
+        x = x_mean + x_max
 
-        # 3. Apply a final classifier
-        x = self.linear(x)
+        # Apply MLP head
+        x = self.mlp(x)
 
         return x
 
@@ -177,3 +212,120 @@ class DimeNetPPModel(nn.Module):
             out = out[:, self.target].unsqueeze(-1)
 
         return out
+
+
+from torch_geometric.nn import SchNet
+class SchNetRegressor(nn.Module):
+    def __init__(
+        self,
+        hidden_channels: int = 128,
+        num_filters: int = 128,
+        num_interactions: int = 6,
+        num_gaussians: int = 50,
+        cutoff: float = 10.0,
+        readout: str = "add",
+        dropout: float = 0.0,
+        add_mlp_head: bool = False,
+        mlp_hidden: int = 256,
+        out_channels: int = 1,
+    ) -> None:
+        super().__init__()
+        self.schnet = SchNet(
+            hidden_channels=hidden_channels,
+            num_filters=num_filters,
+            num_interactions=num_interactions,
+            num_gaussians=num_gaussians,
+            cutoff=cutoff,
+            readout=readout,
+        )
+        self.dropout = nn.Dropout(dropout) if dropout and dropout > 0 else None
+        self.add_mlp_head = add_mlp_head
+        if add_mlp_head:
+            self.head = nn.Sequential(
+                nn.Linear(out_channels, mlp_hidden),
+                nn.SiLU(),
+                nn.Dropout(dropout) if self.dropout is not None else nn.Identity(),
+                nn.Linear(mlp_hidden, 1),
+            )
+        else:
+            self.head = None
+
+    def forward(self, data):
+        # Expects data.z, data.pos, data.batch
+        out = self.schnet(data.z, data.pos, data.batch)
+        if out.dim() == 1:
+            out = out.unsqueeze(-1)  # [B] -> [B,1]
+        if self.dropout is not None:
+            out = self.dropout(out)
+        if self.head is not None:
+            out = self.head(out)
+        return out
+
+class PNANet(nn.Module):
+    def __init__(
+    self,
+    num_node_features: int,
+    hidden_channels: int = 128,
+    out_channels: int = 1,
+    num_layers: int = 5,
+    deg: Optional[torch.Tensor] = None,
+    aggregators: Union[Tuple[str, ...], List[str]] = ("mean", "min", "max", "std"),
+    scalers: Union[Tuple[str, ...], List[str]] = ("identity", "amplification", "attenuation"),
+    dropout: float = 0.2,
+    readout: str = "add",
+    edge_dim: Optional[int] = None,
+    ) -> None:
+        super().__init__()
+        if deg is None:
+            # minimal fallback, PNAConv wants a tensor
+            # this is not as good as a real histogram
+            deg = torch.tensor([0, 1, 2, 3, 4], dtype=torch.long)
+        
+        self.dropout = dropout
+        self.readout = readout
+        self.edge_dim = edge_dim
+
+        self.input_lin = nn.Linear(num_node_features, hidden_channels)
+        self.convs = nn.ModuleList()
+        self.bns = nn.ModuleList()
+
+        for _ in range(num_layers):
+            self.convs.append(
+                PNAConv(
+                    in_channels=hidden_channels,
+                    out_channels=hidden_channels,
+                    aggregators=list(aggregators),
+                    scalers=list(scalers),
+                    deg=deg,
+                    edge_dim=edge_dim,
+                )
+            )
+            self.bns.append(nn.BatchNorm1d(hidden_channels))
+
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_channels, out_channels),
+        )
+    
+    def forward(self, data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+        edge_attr = getattr(data, "edge_attr", None)    
+        x = self.input_lin(x)
+        for conv, bn in zip(self.convs, self.bns):
+            if edge_attr is not None and self.edge_dim is not None:
+                x = conv(x, edge_index, edge_attr)
+            else:
+                x = conv(x, edge_index)
+            x = bn(x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        if self.readout == "mean":
+            x = global_mean_pool(x, batch)
+        else:
+            x = global_add_pool(x, batch)
+
+        x = self.mlp(x)
+        return x

@@ -1,0 +1,18 @@
+defaults:
+  - _self_
+
+name: schnet
+
+init:
+  _target_: models.SchNetRegressor
+  _partial_: false
+  hidden_channels: 128
+  num_filters: 128
+  num_interactions: 6
+  num_gaussians: 50
+  cutoff: 10.0
+  readout: add
+  dropout: 0.0
+  add_mlp_head: false
+  mlp_hidden: 256
+  out_channels: 1
