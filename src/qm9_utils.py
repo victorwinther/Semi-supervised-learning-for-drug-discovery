@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Source:
 https://github.com/pyg-team/pytorch_geometric/blob/master/torch_geometric/loader/dataloader.py
@@ -6,7 +8,7 @@ Minor change to the Collater class such that the dataloader returns batches in
 the form (batch, y) instead of (batch). 
 """
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Optional
 
 import torch.utils.data
 from torch.utils.data.dataloader import default_collate
@@ -15,6 +17,7 @@ from torch_geometric.data.data import BaseData
 from torch_geometric.data.datapipes import DatasetAdapter
 from torch_geometric.typing import TensorFrame, torch_frame
 from torch_geometric.transforms import BaseTransform
+
 
 class GetTarget(BaseTransform):
     def __init__(self, target: int | None = None) -> None:
