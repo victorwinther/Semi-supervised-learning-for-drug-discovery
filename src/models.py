@@ -2,10 +2,10 @@ import torch
 import torch.nn.functional as F
 
 import torch.nn as nn
-from torch_geometric.nn import GCNConv, global_mean_pool, global_add_pool, GINConv
+from torch_geometric.nn import GCNConv, global_mean_pool, global_add_pool, GINConv, PNAConv
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union, Tuple, List
 import torch
 from torch import nn
 
@@ -225,3 +225,72 @@ class SchNetRegressor(nn.Module):
         if self.head is not None:
             out = self.head(out)
         return out
+
+class PNANet(nn.Module):
+    def __init__(
+    self,
+    num_node_features: int,
+    hidden_channels: int = 128,
+    out_channels: int = 1,
+    num_layers: int = 5,
+    deg: Optional[torch.Tensor] = None,
+    aggregators: Union[Tuple[str, ...], List[str]] = ("mean", "min", "max", "std"),
+    scalers: Union[Tuple[str, ...], List[str]] = ("identity", "amplification", "attenuation"),
+    dropout: float = 0.2,
+    readout: str = "add",
+    edge_dim: Optional[int] = None,
+    ) -> None:
+        super().__init__()
+        if deg is None:
+            # minimal fallback, PNAConv wants a tensor
+            # this is not as good as a real histogram
+            deg = torch.tensor([0, 1, 2, 3, 4], dtype=torch.long)
+        
+        self.dropout = dropout
+        self.readout = readout
+        self.edge_dim = edge_dim
+
+        self.input_lin = nn.Linear(num_node_features, hidden_channels)
+        self.convs = nn.ModuleList()
+        self.bns = nn.ModuleList()
+
+        for _ in range(num_layers):
+            self.convs.append(
+                PNAConv(
+                    in_channels=hidden_channels,
+                    out_channels=hidden_channels,
+                    aggregators=list(aggregators),
+                    scalers=list(scalers),
+                    deg=deg,
+                    edge_dim=edge_dim,
+                )
+            )
+            self.bns.append(nn.BatchNorm1d(hidden_channels))
+
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_channels, out_channels),
+        )
+    
+    def forward(self, data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+        edge_attr = getattr(data, "edge_attr", None)    
+        x = self.input_lin(x)
+        for conv, bn in zip(self.convs, self.bns):
+            if edge_attr is not None and self.edge_dim is not None:
+                x = conv(x, edge_index, edge_attr)
+            else:
+                x = conv(x, edge_index)
+            x = bn(x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        if self.readout == "mean":
+            x = global_mean_pool(x, batch)
+        else:
+            x = global_add_pool(x, batch)
+
+        x = self.mlp(x)
+        return x
