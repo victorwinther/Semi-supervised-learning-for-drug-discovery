@@ -1,0 +1,138 @@
+dataset:
+  dataset_name: qm9
+  num_outputs: 1
+  init:
+    _target_: qm9.QM9DataModule
+    data_augmentation: false
+    name: qm9
+    target: 2
+    data_dir: ./data
+    batch_size_train: 64
+    batch_size_inference: 128
+    num_workers: 4
+    splits:
+    - 0.72
+    - 0.08
+    - 0.1
+    - 0.1
+    seed: 0
+    subset_size: null
+trainer:
+  method: semi-supervised-ensemble
+  train:
+    total_epochs: 250
+    validation_interval: 10
+  init:
+    _target_: trainer.SemiSupervisedEnsemble
+    supervised_criterion:
+      _target_: torch.nn.MSELoss
+    optimizer:
+      _target_: torch.optim.AdamW
+      _partial_: true
+      lr: 0.001
+      weight_decay: 0.005
+    scheduler:
+      _target_: torch.optim.lr_scheduler.StepLR
+      _partial_: true
+      step_size: 1
+      gamma: 0.975
+logger:
+  _target_: logger.WandBLogger
+  group: ${dataset.dataset_name}
+  name: ${model.name}_seed=${seed}
+  job_type: test
+  entity: bnns-for-molecules
+  project_name: semi-supervised-ensembles
+  disable: true
+  local_dir: ./logs
+model:
+  name: dimenetpp
+  init:
+    _target_: models.DimeNetPPModel
+    _partial_: false
+    num_node_features: 11
+    hidden_channels: 128
+    out_channels: 1
+    num_blocks: 4
+    int_emb_size: 64
+    basis_emb_size: 8
+    out_emb_channels: 64
+    num_spherical: 7
+    num_radial: 6
+    cutoff: 5.0
+    max_num_neighbors: 32
+    num_before_skip: 1
+    num_after_skip: 2
+    num_output_layers: 3
+    act: swish
+    output_initializer: zeros
+    pretrained: true
+seed: 0
+device: unset
+force_deterministic: false
+debug_mode: false
+result_dir: ./results
+compile_model: false
+
+QM9 dataset loaded with 10466 labeled, 94198 unlabeled, 13083 validation, and 13084 test samples.
+Batch sizes: labeled=64, unlabeled=64
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@hpc.dtu.dk>
+Subject: Job 26847206: <dimenet2> in cluster <dcc> Exited
+
+Job <dimenet2> was submitted from host <hpclogin1> by user <s214963> in cluster <dcc> at Mon Nov 10 14:45:22 2025
+Job was executed on host(s) <4*n-62-18-13>, in queue <c02516>, as user <s214963> in cluster <dcc> at Mon Nov 10 14:45:23 2025
+</zhome/3b/1/169159> was used as the home directory.
+</zhome/3b/1/169159/Semi-supervised-learning-for-drug-discovery> was used as the working directory.
+Started at Mon Nov 10 14:45:23 2025
+Terminated at Mon Nov 10 14:58:11 2025
+Results reported at Mon Nov 10 14:58:11 2025
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+#!/bin/bash
+#BSUB -q c02516            # Queue name (choose gpua100, gpuv100, gpul40s, etc.)
+#BSUB -J dimenet2      # Job name
+#BSUB -n 4                  # Number of CPU cores
+#BSUB -gpu "num=1:mode=exclusive_process"  # One GPU exclusively
+#BSUB -W 12:00              # Walltime limit (HH:MM, max 24 hours for GPU queues)
+#BSUB -R "rusage[mem=8GB]"  # System RAM per CPU core
+#BSUB -o out/dimenet_%J.out     # Standard output file
+#BSUB -e err/dimenet_%J.err     # Standard error file
+
+
+# Navigate to your project directory
+#cd ~/Semi-supervised-learning-for-drug-discovery
+
+# Run the training script
+HYDRA_FULL_ERROR=1 python src/run.py   model=dimenetpp   dataset.init.batch_size_inference=128   dataset.init.batch_size_train=64   logger.disable=true
+
+------------------------------------------------------------
+
+TERM_OWNER: job killed by owner.
+Exited with exit code 130.
+
+Resource usage summary:
+
+    CPU time :                                   919.40 sec.
+    Max Memory :                                 2428 MB
+    Average Memory :                             2060.17 MB
+    Total Requested Memory :                     32768.00 MB
+    Delta Memory :                               30340.00 MB
+    Max Swap :                                   -
+    Max Processes :                              12
+    Max Threads :                                43
+    Run time :                                   873 sec.
+    Turnaround time :                            769 sec.
+
+The output (if any) is above this job summary.
+
+
+
+PS:
+
+Read file <err/dimenet_26847206.err> for stderr output of this job.
+

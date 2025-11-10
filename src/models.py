@@ -93,6 +93,91 @@ class GINNet(nn.Module):
 
         # For scalar regression, this will be shape [batch_size, 1]
         return x
+    
+import torch
+import torch.nn as nn
+from torch_geometric.nn.models import DimeNetPlusPlus
+
+
+class DimeNetPPModel(nn.Module):
+    """
+    Thin wrapper around torch_geometric.nn.models.DimeNetPlusPlus
+    that matches your existing GCN/GIN API (forward(data) -> [B, out_channels]).
+
+    Assumes QM9-like graphs with:
+      - data.z   : [num_nodes] (atomic numbers, dtype long)
+      - data.pos : [num_nodes, 3] (3D coordinates, float)
+      - data.batch : [num_nodes] (graph indices)
+    """
+
+    def __init__(
+        self,
+        # Kept for compatibility with other models / config:
+        num_node_features: int,
+        hidden_channels: int = 128,
+        out_channels: int = 1,
+        num_blocks: int = 4,
+        int_emb_size: int = 64,
+        basis_emb_size: int = 8,
+        out_emb_channels: int = 64,
+        num_spherical: int = 7,
+        num_radial: int = 6,
+        cutoff: float = 5.0,
+        max_num_neighbors: int = 32,   # currently unused in this wrapper
+        num_before_skip: int = 1,
+        num_after_skip: int = 2,
+        num_output_layers: int = 3,
+        act: str = "swish",
+        output_initializer: str = "zeros",  # accepted but NOT forwarded
+        pretrained: bool = False,           # accepted but not used here
+        target: int = 2,                    # for multi-target setups if needed
+    ):
+        super().__init__()
+
+        self.target = target
+
+        act_module = self._build_activation(act)
+
+        # IMPORTANT: do NOT pass output_init here, your PyG version doesn't support it
+        self.model = DimeNetPlusPlus(
+            hidden_channels=hidden_channels,
+            out_channels=out_channels,
+            num_blocks=num_blocks,
+            int_emb_size=int_emb_size,
+            basis_emb_size=basis_emb_size,
+            out_emb_channels=out_emb_channels,
+            num_spherical=num_spherical,
+            num_radial=num_radial,
+            cutoff=cutoff,
+            num_before_skip=num_before_skip,
+            num_after_skip=num_after_skip,
+            num_output_layers=num_output_layers,
+            act=act_module,     # this is supported in your version
+        )
+
+    @staticmethod
+    def _build_activation(name: str) -> nn.Module:
+        name = name.lower()
+        if name == "swish":
+            # Swish ~ SiLU, what DimeNet++ uses by default
+            return nn.SiLU()
+        if name == "relu":
+            return nn.ReLU()
+        if name == "gelu":
+            return nn.GELU()
+        raise ValueError(f"Unknown activation: {name}")
+
+    def forward(self, data):
+        # DimeNet++ uses z, pos, batch (not x/edge_index)
+        out = self.model(data.z, data.pos, data.batch)
+        # out shape: [batch_size, out_channels] (1 by default)
+
+        # If you ever set out_channels > 1 and want just one property:
+        if out.dim() == 2 and out.size(-1) > 1 and self.target is not None:
+            out = out[:, self.target].unsqueeze(-1)
+
+        return out
+
 
 from torch_geometric.nn import SchNet
 class SchNetRegressor(nn.Module):

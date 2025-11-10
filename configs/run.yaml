@@ -7,7 +7,7 @@ defaults:
 
 
 seed: 0 # Random seed
-device: cuda # Device to use (cuda or cpu) if unset will use cuda if available
+device: unset # Device to use (cuda or cpu) if unset will use cuda if available
 force_deterministic: False # Force deterministic algorithms
 debug_mode: False # Debug mode
 result_dir: ./results

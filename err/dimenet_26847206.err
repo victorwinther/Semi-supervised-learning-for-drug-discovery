@@ -1,0 +1,39 @@
+  0%|          | 0/250 [00:00<?, ?it/s]  0%|          | 1/250 [00:19<1:22:25, 19.86s/it]  1%|          | 2/250 [00:38<1:18:47, 19.06s/it]  1%|          | 3/250 [00:56<1:17:24, 18.80s/it]  2%|▏         | 4/250 [01:15<1:17:02, 18.79s/it]  2%|▏         | 5/250 [01:34<1:16:48, 18.81s/it]  2%|▏         | 6/250 [01:53<1:16:40, 18.85s/it]  3%|▎         | 7/250 [02:12<1:16:23, 18.86s/it]  3%|▎         | 8/250 [02:31<1:16:10, 18.89s/it]  4%|▎         | 9/250 [02:50<1:15:55, 18.90s/it]  4%|▎         | 9/250 [03:18<1:15:55, 18.90s/it, supervised_loss=0.0607, val_MSE=0.0612]  4%|▍         | 10/250 [03:18<1:26:49, 21.71s/it, supervised_loss=0.0607, val_MSE=0.0612]  4%|▍         | 11/250 [03:37<1:23:01, 20.84s/it, supervised_loss=0.0607, val_MSE=0.0612]  5%|▍         | 12/250 [03:55<1:20:07, 20.20s/it, supervised_loss=0.0607, val_MSE=0.0612]  5%|▌         | 13/250 [04:14<1:18:15, 19.81s/it, supervised_loss=0.0607, val_MSE=0.0612]  6%|▌         | 14/250 [04:33<1:16:52, 19.55s/it, supervised_loss=0.0607, val_MSE=0.0612]  6%|▌         | 15/250 [04:52<1:15:37, 19.31s/it, supervised_loss=0.0607, val_MSE=0.0612]  6%|▋         | 16/250 [05:11<1:14:51, 19.19s/it, supervised_loss=0.0607, val_MSE=0.0612]  7%|▋         | 17/250 [05:30<1:13:59, 19.05s/it, supervised_loss=0.0607, val_MSE=0.0612]  7%|▋         | 18/250 [05:48<1:13:19, 18.96s/it, supervised_loss=0.0607, val_MSE=0.0612]  8%|▊         | 19/250 [06:07<1:12:52, 18.93s/it, supervised_loss=0.0607, val_MSE=0.0612]  8%|▊         | 19/250 [06:35<1:12:52, 18.93s/it, supervised_loss=0.026, val_MSE=0.0396]   8%|▊         | 20/250 [06:35<1:22:49, 21.60s/it, supervised_loss=0.026, val_MSE=0.0396]  8%|▊         | 21/250 [06:54<1:19:18, 20.78s/it, supervised_loss=0.026, val_MSE=0.0396]  9%|▉         | 22/250 [07:13<1:16:53, 20.23s/it, supervised_loss=0.026, val_MSE=0.0396]  9%|▉         | 23/250 [07:32<1:14:52, 19.79s/it, supervised_loss=0.026, val_MSE=0.0396] 10%|▉         | 24/250 [07:50<1:13:26, 19.50s/it, supervised_loss=0.026, val_MSE=0.0396] 10%|█         | 25/250 [08:09<1:12:16, 19.27s/it, supervised_loss=0.026, val_MSE=0.0396] 10%|█         | 26/250 [08:28<1:11:20, 19.11s/it, supervised_loss=0.026, val_MSE=0.0396] 11%|█         | 27/250 [08:47<1:10:33, 18.98s/it, supervised_loss=0.026, val_MSE=0.0396] 11%|█         | 28/250 [09:05<1:10:05, 18.95s/it, supervised_loss=0.026, val_MSE=0.0396] 12%|█▏        | 29/250 [09:24<1:09:44, 18.93s/it, supervised_loss=0.026, val_MSE=0.0396] 12%|█▏        | 29/250 [09:52<1:09:44, 18.93s/it, supervised_loss=0.015, val_MSE=0.0555] 12%|█▏        | 30/250 [09:52<1:18:53, 21.52s/it, supervised_loss=0.015, val_MSE=0.0555] 12%|█▏        | 31/250 [10:10<1:15:17, 20.63s/it, supervised_loss=0.015, val_MSE=0.0555] 13%|█▎        | 32/250 [10:29<1:12:56, 20.08s/it, supervised_loss=0.015, val_MSE=0.0555] 13%|█▎        | 33/250 [10:48<1:11:20, 19.73s/it, supervised_loss=0.015, val_MSE=0.0555] 14%|█▎        | 34/250 [11:07<1:10:08, 19.48s/it, supervised_loss=0.015, val_MSE=0.0555] 14%|█▍        | 35/250 [11:26<1:09:12, 19.32s/it, supervised_loss=0.015, val_MSE=0.0555] 14%|█▍        | 36/250 [11:45<1:08:25, 19.19s/it, supervised_loss=0.015, val_MSE=0.0555] 15%|█▍        | 37/250 [12:04<1:07:41, 19.07s/it, supervised_loss=0.015, val_MSE=0.0555] 15%|█▍        | 37/250 [12:17<1:10:44, 19.93s/it, supervised_loss=0.015, val_MSE=0.0555]
+Traceback (most recent call last):
+  File "/zhome/3b/1/169159/Semi-supervised-learning-for-drug-discovery/src/run.py", line 44, in <module>
+    main()
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/zhome/3b/1/169159/Semi-supervised-learning-for-drug-discovery/src/run.py", line 38, in main
+    results = trainer.train(**cfg.trainer.train)
+  File "/zhome/3b/1/169159/Semi-supervised-learning-for-drug-discovery/src/trainer.py", line 64, in train
+    supervised_losses = [self.supervised_criterion(model(x), targets) for model in self.models]
+  File "/zhome/3b/1/169159/Semi-supervised-learning-for-drug-discovery/src/trainer.py", line 64, in <listcomp>
+    supervised_losses = [self.supervised_criterion(model(x), targets) for model in self.models]
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/zhome/3b/1/169159/Semi-supervised-learning-for-drug-discovery/src/models.py", line 172, in forward
+    out = self.model(data.z, data.pos, data.batch)
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/torch_geometric/nn/models/dimenet.py", line 725, in forward
+    return scatter(P, batch, dim=0, reduce='sum')
+  File "/zhome/3b/1/169159/.local/lib/python3.9/site-packages/torch_geometric/utils/_scatter.py", line 53, in scatter
+    dim_size = int(index.max()) + 1 if index.numel() > 0 else 0
+KeyboardInterrupt
