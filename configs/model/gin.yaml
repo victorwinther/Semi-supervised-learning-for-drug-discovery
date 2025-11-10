@@ -1,0 +1,13 @@
+defaults:
+  - _self_
+
+name: gin
+
+init:
+  _target_: models.GINNet
+  _partial_: false
+  num_node_features: 11
+  hidden_channels: 128
+  num_layers: 5
+  dropout: 0.2
+  out_channels: 1
