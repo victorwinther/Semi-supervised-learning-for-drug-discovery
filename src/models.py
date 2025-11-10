@@ -93,6 +93,50 @@ class GINNet(nn.Module):
 
         # For scalar regression, this will be shape [batch_size, 1]
         return x
-    
-    
-    
+
+from torch_geometric.nn import SchNet
+class SchNetRegressor(nn.Module):
+    def __init__(
+        self,
+        hidden_channels: int = 128,
+        num_filters: int = 128,
+        num_interactions: int = 6,
+        num_gaussians: int = 50,
+        cutoff: float = 10.0,
+        readout: str = "add",
+        dropout: float = 0.0,
+        add_mlp_head: bool = False,
+        mlp_hidden: int = 256,
+        out_channels: int = 1,
+    ) -> None:
+        super().__init__()
+        self.schnet = SchNet(
+            hidden_channels=hidden_channels,
+            num_filters=num_filters,
+            num_interactions=num_interactions,
+            num_gaussians=num_gaussians,
+            cutoff=cutoff,
+            readout=readout,
+        )
+        self.dropout = nn.Dropout(dropout) if dropout and dropout > 0 else None
+        self.add_mlp_head = add_mlp_head
+        if add_mlp_head:
+            self.head = nn.Sequential(
+                nn.Linear(out_channels, mlp_hidden),
+                nn.SiLU(),
+                nn.Dropout(dropout) if self.dropout is not None else nn.Identity(),
+                nn.Linear(mlp_hidden, 1),
+            )
+        else:
+            self.head = None
+
+    def forward(self, data):
+        # Expects data.z, data.pos, data.batch
+        out = self.schnet(data.z, data.pos, data.batch)
+        if out.dim() == 1:
+            out = out.unsqueeze(-1)  # [B] -> [B,1]
+        if self.dropout is not None:
+            out = self.dropout(out)
+        if self.head is not None:
+            out = self.head(out)
+        return out
