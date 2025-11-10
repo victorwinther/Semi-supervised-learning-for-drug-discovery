@@ -11,25 +11,60 @@ from torch import nn
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, num_node_features, hidden_channels=64):
+    def __init__(self, num_node_features, hidden_channels=64, num_layers=3, dropout=0.2):
         super(GCN, self).__init__()
-        self.conv1 = GCNConv(num_node_features, hidden_channels)
-        self.conv2 = GCNConv(hidden_channels, hidden_channels)
-        self.linear = torch.nn.Linear(hidden_channels, 1)
+        
+        self.num_layers = num_layers
+        self.dropout = dropout
+        
+        # Input layer
+        self.convs = nn.ModuleList()
+        self.batch_norms = nn.ModuleList()
+        
+        # First layer
+        self.convs.append(GCNConv(num_node_features, hidden_channels))
+        self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
+        
+        # Hidden layers
+        for _ in range(num_layers - 2):
+            self.convs.append(GCNConv(hidden_channels, hidden_channels))
+            self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
+        
+        # Last GCN layer
+        self.convs.append(GCNConv(hidden_channels, hidden_channels))
+        self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
+        
+        # MLP head for regression
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_channels, hidden_channels // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_channels // 2, 1)
+        )
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
 
-        # 1. Obtain node embeddings
-        x = self.conv1(x, edge_index)
-        x = x.relu()
-        x = self.conv2(x, edge_index)
+        # Message passing with residual connections
+        for i, (conv, bn) in enumerate(zip(self.convs, self.batch_norms)):
+            x_new = conv(x, edge_index)
+            x_new = bn(x_new)
+            x_new = F.relu(x_new)
+            x_new = F.dropout(x_new, p=self.dropout, training=self.training)
+            
+            # Add residual connection (skip connection) after first layer
+            if i > 0:
+                x = x + x_new
+            else:
+                x = x_new
 
-        # 2. Readout layer
-        x = global_mean_pool(x, batch)  # [batch_size, hidden_channels]
+        # Global pooling (combine mean and max pooling)
+        x_mean = global_mean_pool(x, batch)
+        x_max = global_add_pool(x, batch)
+        x = x_mean + x_max
 
-        # 3. Apply a final classifier
-        x = self.linear(x)
+        # Apply MLP head
+        x = self.mlp(x)
 
         return x
 
