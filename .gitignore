@@ -122,3 +122,6 @@ outputs/
 
 # .vscode folder
 .vscode
+
+out/
+err/
