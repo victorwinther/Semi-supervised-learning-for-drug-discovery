@@ -11,37 +11,48 @@
 
 # source ~/.venvs/ssl/bin/activate
 
-# Choose hyperparams based on LSB_JOBINDEX
 case "$LSB_JOBINDEX" in
   1)
     LR=0.0005
-    HIDDEN=64
-    NINTER=4
+    HIDDEN=128
+    NINTER=6
+    DROPOUT=0.0
+    WD=0.005
     ;;
   2)
     LR=0.0005
     HIDDEN=128
-    NINTER=4
+    NINTER=6
+    DROPOUT=0.1
+    WD=0.005
     ;;
   3)
     LR=0.0005
     HIDDEN=128
     NINTER=6
+    DROPOUT=0.25
+    WD=0.005
     ;;
   4)
-    LR=0.001
+    LR=0.0005
     HIDDEN=128
     NINTER=6
+    DROPOUT=0.35
+    WD=0.005
     ;;
   5)
-    LR=0.001
-    HIDDEN=256
+    LR=0.0005
+    HIDDEN=128
     NINTER=6
+    DROPOUT=0.1
+    WD=0.01
     ;;
   6)
     LR=0.001
     HIDDEN=128
-    NINTER=8
+    NINTER=6
+    DROPOUT=0.1
+    WD=0.005
     ;;
 esac
 
@@ -49,10 +60,14 @@ source ../DeepLearning/venv/bin/activate
 
 python src/run.py \
   model=schnet \
-  trainer.train.total_epochs=200 \
+  trainer.train.total_epochs=150 \
   trainer.init.optimizer.lr=$LR \
+  trainer.init.optimizer.weight_decay=$WD \
   model.init.hidden_channels=$HIDDEN \
   model.init.num_filters=$HIDDEN \
   model.init.num_interactions=$NINTER \
+  model.init.dropout=$DROPOUT \
+  model.init.add_mlp_head=true \
+  model.init.mlp_hidden=128 \
   dataset.init.batch_size_train=32 \
   dataset.init.batch_size_inference=64

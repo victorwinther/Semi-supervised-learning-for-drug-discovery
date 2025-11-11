@@ -12,7 +12,7 @@ init:
   num_gaussians: 50
   cutoff: 10.0
   readout: add
-  dropout: 0.0
-  add_mlp_head: false
-  mlp_hidden: 256
+  dropout: 0.2
+  add_mlp_head: true
+  mlp_hidden: 128
   out_channels: 1

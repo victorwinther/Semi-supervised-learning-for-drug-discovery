@@ -233,13 +233,12 @@ class SchNetRegressor(nn.Module):
             cutoff=cutoff,
             readout=readout,
         )
-        self.dropout = nn.Dropout(dropout) if dropout and dropout > 0 else None
         self.add_mlp_head = add_mlp_head
         if add_mlp_head:
             self.head = nn.Sequential(
                 nn.Linear(out_channels, mlp_hidden),
                 nn.SiLU(),
-                nn.Dropout(dropout) if self.dropout is not None else nn.Identity(),
+                nn.Dropout(dropout) if (dropout and dropout > 0) else nn.Identity(),
                 nn.Linear(mlp_hidden, 1),
             )
         else:
@@ -250,8 +249,6 @@ class SchNetRegressor(nn.Module):
         out = self.schnet(data.z, data.pos, data.batch)
         if out.dim() == 1:
             out = out.unsqueeze(-1)  # [B] -> [B,1]
-        if self.dropout is not None:
-            out = self.dropout(out)
         if self.head is not None:
             out = self.head(out)
         return out
