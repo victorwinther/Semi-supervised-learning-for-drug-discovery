@@ -1,45 +1,44 @@
 import torch
 import torch.nn.functional as F
-
 import torch.nn as nn
-from torch_geometric.nn import GCNConv, global_mean_pool, global_add_pool, GINConv, PNAConv
-
+from torch_geometric.nn import GCNConv, global_mean_pool, global_add_pool, GINConv
 from dataclasses import dataclass
-from typing import Optional, Union, Tuple, List
-import torch
-from torch import nn
+from typing import Optional
+from torch_geometric.nn import SchNet, DimeNetPlusPlus, AttentiveFP
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, num_node_features, hidden_channels=64, num_layers=3, dropout=0.2):
+    def __init__(
+        self, num_node_features, hidden_channels=64, num_layers=3, dropout=0.2
+    ):
         super(GCN, self).__init__()
-        
+
         self.num_layers = num_layers
         self.dropout = dropout
-        
+
         # Input layer
         self.convs = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
-        
+
         # First layer
         self.convs.append(GCNConv(num_node_features, hidden_channels))
         self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
-        
+
         # Hidden layers
         for _ in range(num_layers - 2):
             self.convs.append(GCNConv(hidden_channels, hidden_channels))
             self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
-        
+
         # Last GCN layer
         self.convs.append(GCNConv(hidden_channels, hidden_channels))
         self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
-        
+
         # MLP head for regression
         self.mlp = nn.Sequential(
             nn.Linear(hidden_channels, hidden_channels // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_channels // 2, 1)
+            nn.Linear(hidden_channels // 2, 1),
         )
 
     def forward(self, data):
@@ -51,7 +50,7 @@ class GCN(torch.nn.Module):
             x_new = bn(x_new)
             x_new = F.relu(x_new)
             x_new = F.dropout(x_new, p=self.dropout, training=self.training)
-            
+
             # Add residual connection (skip connection) after first layer
             if i > 0:
                 x = x + x_new
@@ -67,6 +66,7 @@ class GCN(torch.nn.Module):
         x = self.mlp(x)
 
         return x
+
 
 class GINNet(nn.Module):
     def __init__(
@@ -128,10 +128,6 @@ class GINNet(nn.Module):
 
         # For scalar regression, this will be shape [batch_size, 1]
         return x
-    
-import torch
-import torch.nn as nn
-from torch_geometric.nn.models import DimeNetPlusPlus
 
 
 class DimeNetPPModel(nn.Module):
@@ -158,14 +154,14 @@ class DimeNetPPModel(nn.Module):
         num_spherical: int = 7,
         num_radial: int = 6,
         cutoff: float = 5.0,
-        max_num_neighbors: int = 32,   # currently unused in this wrapper
+        max_num_neighbors: int = 32,  # currently unused in this wrapper
         num_before_skip: int = 1,
         num_after_skip: int = 2,
         num_output_layers: int = 3,
         act: str = "swish",
         output_initializer: str = "zeros",  # accepted but NOT forwarded
-        pretrained: bool = False,           # accepted but not used here
-        target: int = 2,                    # for multi-target setups if needed
+        pretrained: bool = False,  # accepted but not used here
+        target: int = 2,  # for multi-target setups if needed
     ):
         super().__init__()
 
@@ -187,7 +183,7 @@ class DimeNetPPModel(nn.Module):
             num_before_skip=num_before_skip,
             num_after_skip=num_after_skip,
             num_output_layers=num_output_layers,
-            act=act_module,     # this is supported in your version
+            act=act_module,  # this is supported in your version
         )
 
     @staticmethod
@@ -214,7 +210,6 @@ class DimeNetPPModel(nn.Module):
         return out
 
 
-from torch_geometric.nn import SchNet
 class SchNetRegressor(nn.Module):
     def __init__(
         self,
@@ -261,71 +256,32 @@ class SchNetRegressor(nn.Module):
             out = self.head(out)
         return out
 
-class PNANet(nn.Module):
+
+class AttentiveFPRegressor(nn.Module):
     def __init__(
-    self,
-    num_node_features: int,
-    hidden_channels: int = 128,
-    out_channels: int = 1,
-    num_layers: int = 5,
-    deg: Optional[torch.Tensor] = None,
-    aggregators: Union[Tuple[str, ...], List[str]] = ("mean", "min", "max", "std"),
-    scalers: Union[Tuple[str, ...], List[str]] = ("identity", "amplification", "attenuation"),
-    dropout: float = 0.2,
-    readout: str = "add",
-    edge_dim: Optional[int] = None,
+        self,
+        in_channels: int,
+        hidden_channels: int = 200,
+        out_channels: int = 1,
+        edge_dim: int = 4,
+        num_layers: int = 3,
+        num_timesteps: int = 3,
+        dropout: float = 0.0,
     ) -> None:
         super().__init__()
-        if deg is None:
-            # minimal fallback, PNAConv wants a tensor
-            # this is not as good as a real histogram
-            deg = torch.tensor([0, 1, 2, 3, 4], dtype=torch.long)
-        
-        self.dropout = dropout
-        self.readout = readout
-        self.edge_dim = edge_dim
-
-        self.input_lin = nn.Linear(num_node_features, hidden_channels)
-        self.convs = nn.ModuleList()
-        self.bns = nn.ModuleList()
-
-        for _ in range(num_layers):
-            self.convs.append(
-                PNAConv(
-                    in_channels=hidden_channels,
-                    out_channels=hidden_channels,
-                    aggregators=list(aggregators),
-                    scalers=list(scalers),
-                    deg=deg,
-                    edge_dim=edge_dim,
-                )
-            )
-            self.bns.append(nn.BatchNorm1d(hidden_channels))
-
-        self.mlp = nn.Sequential(
-            nn.Linear(hidden_channels, hidden_channels),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_channels, out_channels),
+        self.model = AttentiveFP(
+            in_channels=in_channels,
+            hidden_channels=hidden_channels,
+            out_channels=out_channels,
+            edge_dim=edge_dim,
+            num_layers=num_layers,
+            num_timesteps=num_timesteps,
+            dropout=dropout,
         )
-    
+
     def forward(self, data):
-        x, edge_index, batch = data.x, data.edge_index, data.batch
-        edge_attr = getattr(data, "edge_attr", None)    
-        x = self.input_lin(x)
-        for conv, bn in zip(self.convs, self.bns):
-            if edge_attr is not None and self.edge_dim is not None:
-                x = conv(x, edge_index, edge_attr)
-            else:
-                x = conv(x, edge_index)
-            x = bn(x)
-            x = F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
-
-        if self.readout == "mean":
-            x = global_mean_pool(x, batch)
-        else:
-            x = global_add_pool(x, batch)
-
-        x = self.mlp(x)
-        return x
+        if not hasattr(data, "edge_attr") or data.edge_attr is None:
+            raise ValueError(
+                "AttentiveFP requires `edge_attr` features on the input graph."
+            )
+        return self.model(data.x, data.edge_index, data.edge_attr, data.batch)
