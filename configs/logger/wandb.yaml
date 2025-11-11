@@ -2,10 +2,10 @@ defaults:
   - _self_
 
 _target_: logger.WandBLogger
-group: ${dataset.dataset_name} # Name of the group for wandb
-name: ${model.name}_seed=${seed} # Name of the run for wandb
-job_type: test
+group: ${model.name}_${dataset.dataset_name}              # group by model
+name: ${model.name}_seed=${seed}  # run name
+job_type: ${trainer.method}       # "semi-supervised-ensemble"
 entity: victorwinther-technical-university-of-denmark-
 project_name: semi-supervised-learning-for-drug-discovery
 disable: false
-local_dir: ./logs #Directory to save logs
+local_dir: ./logs
