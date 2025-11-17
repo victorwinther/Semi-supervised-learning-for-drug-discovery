@@ -21,5 +21,9 @@ init:
     _partial_: true
     step_size: 1
     gamma: 0.975
+  unsupervised_weight: 1.0
+  pseudo_label_std_threshold: 0.15
+  ema_decay: 0.99
+  consistency_rampup_epochs: 50
 
     
