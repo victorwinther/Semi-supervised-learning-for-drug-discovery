@@ -6,7 +6,6 @@ from omegaconf import OmegaConf
 
 from utils import seed_everything
 
-
 @hydra.main(
     config_path="../configs/",
     config_name="run.yaml",

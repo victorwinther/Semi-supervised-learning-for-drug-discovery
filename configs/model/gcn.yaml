@@ -7,3 +7,6 @@ init:
   _target_: models.GCN
   _partial_: false
   num_node_features: 11
+  hidden_channels: 128  # Increased from 64
+  num_layers: 4  # Deeper network
+  dropout: 0.1  # Add regularization
