@@ -21,5 +21,4 @@ init:
     _partial_: true
     step_size: 1
     gamma: 0.975
-
-    
+  lambda_u: 1.0    # weight for unsupervised consistency loss

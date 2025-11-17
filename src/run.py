@@ -28,13 +28,18 @@ def main(cfg):
 
     dm = hydra.utils.instantiate(cfg.dataset.init)
 
-    model = hydra.utils.instantiate(cfg.model.init).to(device)
+    base_model_cfg = cfg.model.init
 
-    if cfg.compile_model:
-        model = torch.compile(model)
-    models = [model]
-    trainer = hydra.utils.instantiate(cfg.trainer.init, models=models, logger=logger, datamodule=dm, device=device)
+    models = []
+    for _ in range(2):  # or 3 if you like long training times
+        m = hydra.utils.instantiate(base_model_cfg).to(device)
+        if cfg.compile_model:
+            m = torch.compile(m)
+        models.append(m)
 
+    trainer = hydra.utils.instantiate(
+        cfg.trainer.init, models=models, logger=logger, datamodule=dm, device=device
+    )
     results = trainer.train(**cfg.trainer.train)
     results = torch.Tensor(results)
 
