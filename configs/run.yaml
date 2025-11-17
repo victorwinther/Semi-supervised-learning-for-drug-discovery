@@ -1,10 +1,10 @@
 defaults:
   - dataset: qm9
-  - trainer: semi-supervised-ensemble  # options: self-supervised, supervised
+  # - trainer: semi-supervised-ensemble  # options: self-supervised, supervised
+  - trainer: mean-teacher # semi-supervised alternatives: semi-supervised-ensemble
   - logger: wandb
   - model: visnet
   - _self_
-
 
 seed: 0 # Random seed
 device: unset # Device to use (cuda or cpu) if unset will use cuda if available
