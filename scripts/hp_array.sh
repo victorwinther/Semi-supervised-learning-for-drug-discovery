@@ -48,6 +48,7 @@ esac
 
 python src/run.py \
   model=dimenetpp \
+  trainer=mean-teacher \
   trainer.train.total_epochs=40 \
   trainer.init.optimizer.lr=$LR \
   model.init.hidden_channels=$HIDDEN \
