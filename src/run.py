@@ -28,11 +28,16 @@ def main(cfg):
 
     dm = hydra.utils.instantiate(cfg.dataset.init)
 
-    model = hydra.utils.instantiate(cfg.model.init).to(device)
+    num_networks = 1
+    if "num_networks" in cfg.trainer.init:
+        num_networks = cfg.trainer.init.num_networks or 1
 
-    if cfg.compile_model:
-        model = torch.compile(model)
-    models = [model]
+    models = []
+    for _ in range(num_networks):
+        model = hydra.utils.instantiate(cfg.model.init).to(device)
+        if cfg.compile_model:
+            model = torch.compile(model)
+        models.append(model)
     trainer = hydra.utils.instantiate(cfg.trainer.init, models=models, logger=logger, datamodule=dm, device=device)
 
     results = trainer.train(**cfg.trainer.train)
