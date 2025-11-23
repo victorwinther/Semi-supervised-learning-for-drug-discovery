@@ -1,4 +1,7 @@
-
+import numpy as np
+import math
+if not hasattr(np, 'math'):
+    np.math = math
 from itertools import chain
 import hydra
 import torch

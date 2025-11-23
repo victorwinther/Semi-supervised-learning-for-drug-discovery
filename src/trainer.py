@@ -278,3 +278,168 @@ class MeanTeacherTrainer:
         final_metrics = self.validate()
         self.logger.log_dict(final_metrics, step=total_epochs)
         return list(final_metrics.values())
+
+class ConsistencyAugmentationTrainer:
+    def __init__(
+        self,
+        supervised_criterion,
+        optimizer,
+        scheduler,
+        device,
+        models,
+        logger,
+        datamodule,
+        consistency_weight: float = 1.0,
+        ramp_up_epochs: Optional[int] = None,
+        aug_noise_std: float = 0.02,   # Std dev for coordinate noise
+        aug_mask_prob: float = 0.1,    # Probability of masking node features
+    ):
+        """
+        Consistency Regularization Trainer with Graph Augmentations.
+        
+        Optimizes: 
+            Loss = Supervised_Loss + (weight * MSE(Pred_Original, Pred_Augmented))
+        
+        Augmentations:
+            1. Coordinate Jitter (for 3D models like SchNet/ViSNet)
+            2. Feature Masking (for 2D models like GCN/GIN)
+        """
+        self.device = device
+        self.model = models[0].to(device) # Single model approach
+
+        # Optim / sched
+        self.supervised_criterion = supervised_criterion
+        self.optimizer = optimizer(params=self.model.parameters())
+        self.scheduler = scheduler(optimizer=self.optimizer)
+
+        # Dataloaders
+        self.labeled_loader = datamodule.train_dataloader()
+        self.unlabeled_loader = datamodule.unsupervised_train_dataloader()
+        self.val_dataloader = datamodule.val_dataloader()
+        self.test_dataloader = datamodule.test_dataloader()
+
+        # Logging
+        self.logger = logger
+
+        # Hyperparams
+        self.consistency_weight = consistency_weight
+        self.ramp_up_epochs = ramp_up_epochs
+        self.aug_noise_std = aug_noise_std
+        self.aug_mask_prob = aug_mask_prob
+
+    def _get_unlabeled_batch(self, unlabeled_iter):
+        """Safely get next unlabeled batch, cycling the iterator if needed."""
+        try:
+            batch = next(unlabeled_iter)
+        except StopIteration:
+            unlabeled_iter = iter(self.unlabeled_loader)
+            batch = next(unlabeled_iter)
+        return batch, unlabeled_iter
+
+    def _current_consistency_weight(self, epoch: int) -> float:
+        """Linear ramp-up."""
+        if self.ramp_up_epochs is None or self.ramp_up_epochs <= 0:
+            return self.consistency_weight
+        ramp_factor = min(1.0, epoch / float(self.ramp_up_epochs))
+        return self.consistency_weight * ramp_factor
+
+    def augment_batch(self, batch):
+        """
+        Applies non-destructive augmentations to a batch of molecules.
+        """
+        # Clone to ensure we don't mess up the original batch for the first pass
+        batch_aug = batch.clone()
+        
+        # 1. Coordinate Noise (Crucial for 3D models: SchNet, ViSNet, DimeNet)
+        if hasattr(batch_aug, 'pos') and batch_aug.pos is not None:
+            noise = torch.randn_like(batch_aug.pos) * self.aug_noise_std
+            batch_aug.pos = batch_aug.pos + noise
+            
+        # 2. Feature Masking (Crucial for 2D models: GCN, GIN)
+        if hasattr(batch_aug, 'x') and batch_aug.x is not None:
+            mask = torch.rand(batch_aug.x.size(), device=self.device) < self.aug_mask_prob
+            batch_aug.x[mask] = 0.0
+            
+        return batch_aug
+
+    def validate(self):
+        self.model.eval()
+        val_losses = []
+        
+        with torch.no_grad():
+            for x, targets in self.val_dataloader:
+                x, targets = x.to(self.device), targets.to(self.device)
+                preds = self.model(x)
+                val_losses.append(F.mse_loss(preds, targets).item())
+                
+        val_loss = np.mean(val_losses) if val_losses else float("nan")
+        return {"val_MSE": val_loss}
+
+    def train(self, total_epochs, validation_interval):
+        for epoch in (pbar := tqdm(range(1, total_epochs + 1))):
+            
+            self.model.train()
+            
+            sup_losses_logged = []
+            cons_losses_logged = []
+            
+            current_weight = self._current_consistency_weight(epoch)
+            unlabeled_iter = iter(self.unlabeled_loader)
+
+            for (x_l, y_l) in self.labeled_loader:
+                x_l, y_l = x_l.to(self.device), y_l.to(self.device)
+
+                # Get unlabeled batch
+                (x_u, _), unlabeled_iter = self._get_unlabeled_batch(unlabeled_iter)
+                x_u = x_u.to(self.device)
+                
+                # Create Augmented version of unlabeled batch
+                x_u_aug = self.augment_batch(x_u)
+
+                self.optimizer.zero_grad()
+
+                # 1. Supervised Loss
+                preds_l = self.model(x_l)
+                sup_loss = self.supervised_criterion(preds_l, y_l)
+
+                # 2. Consistency Loss (Augmentation)
+                # Get prediction on original Clean data
+                pred_u_clean = self.model(x_u)
+                
+                # Get prediction on Augmented data
+                pred_u_aug = self.model(x_u_aug)
+                
+                # Minimize difference. 
+                # We detach 'clean' targets to stop gradient flowing back through them
+                # (Standard practice in UDA/Consistency Regularization)
+                cons_loss = F.mse_loss(pred_u_aug, pred_u_clean.detach())
+
+                loss = sup_loss + (current_weight * cons_loss)
+                
+                loss.backward()
+                self.optimizer.step()
+
+                sup_losses_logged.append(sup_loss.detach().item())
+                cons_losses_logged.append(cons_loss.detach().item())
+
+            self.scheduler.step()
+
+            sup_losses_logged = np.mean(sup_losses_logged)
+            cons_losses_logged = np.mean(cons_losses_logged)
+
+            summary_dict = {
+                "supervised_loss": sup_losses_logged,
+                "consistency_loss": cons_losses_logged,
+                "weight": current_weight
+            }
+
+            if epoch % validation_interval == 0 or epoch == total_epochs:
+                val_metrics = self.validate()
+                summary_dict.update(val_metrics)
+                pbar.set_postfix(summary_dict)
+
+            self.logger.log_dict(summary_dict, step=epoch)
+            
+        final_metrics = self.validate()
+        self.logger.log_dict(final_metrics, step=total_epochs)
+        return list(final_metrics.values())
