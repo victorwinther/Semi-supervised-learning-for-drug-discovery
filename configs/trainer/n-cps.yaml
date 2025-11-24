@@ -1,0 +1,29 @@
+defaults:
+  - self
+
+method: ncps
+
+train:
+  total_epochs: 200
+  validation_interval: 5
+
+init:
+  target: trainer.NCPS
+  num_networks: 2
+  supervised_criterion:
+    target: torch.nn.MSELoss
+  unsupervised_criterion:
+    target: torch.nn.MSELoss
+  optimizer:
+    target: torch.optim.AdamW
+    partial: true
+    lr: 0.001
+    weight_decay: 0.005
+  scheduler:
+    target: torch.optim.lr_scheduler.StepLR
+    partial: true
+    step_size: 1
+    gamma: 0.975
+  unsupervised_weight: 1.0
+  consistency_rampup_epochs: 50
+  hard_pseudo_labels: false
