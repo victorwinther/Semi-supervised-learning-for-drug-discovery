@@ -1,5 +1,5 @@
 defaults:
-  - self
+  - _self_
 
 method: ncps
 
@@ -8,20 +8,20 @@ train:
   validation_interval: 5
 
 init:
-  target: trainer.NCPS
+  _target_: trainer.NCPS
   num_networks: 2
   supervised_criterion:
-    target: torch.nn.MSELoss
+    _target_: torch.nn.MSELoss
   unsupervised_criterion:
-    target: torch.nn.MSELoss
+    _target_: torch.nn.MSELoss
   optimizer:
-    target: torch.optim.AdamW
-    partial: true
+    _target_: torch.optim.AdamW
+    _partial_: true
     lr: 0.001
     weight_decay: 0.005
   scheduler:
-    target: torch.optim.lr_scheduler.StepLR
-    partial: true
+    _target_: torch.optim.lr_scheduler.StepLR
+    _partial_: true
     step_size: 1
     gamma: 0.975
   unsupervised_weight: 1.0
