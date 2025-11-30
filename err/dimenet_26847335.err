@@ -1,8 +1,0 @@
-wandb: Currently logged in as: victorwinther (victorwinther-technical-university-of-denmark-) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
-wandb: Tracking run with wandb version 0.22.3
-wandb: Run data is saved locally in ./logs/wandb/run-20251110_145901-gysgafvz
-wandb: Run `wandb offline` to turn off syncing.
-wandb: Syncing run dimenetpp_seed=0
-wandb: ⭐️ View project at https://wandb.ai/victorwinther-technical-university-of-denmark-/semi-supervised-learning-for-drug-discovery
-wandb: 🚀 View run at https://wandb.ai/victorwinther-technical-university-of-denmark-/semi-supervised-learning-for-drug-discovery/runs/gysgafvz
-  0%|          | 0/250 [00:00<?, ?it/s]  0%|          | 1/250 [00:19<1:22:47, 19.95s/it]  1%|          | 2/250 [00:38<1:20:04, 19.37s/it]  1%|          | 3/250 [00:57<1:18:52, 19.16s/it]

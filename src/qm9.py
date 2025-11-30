@@ -80,6 +80,20 @@ class QM9DataModule(pl.LightningDataModule):
         self.data_train_labeled = dataset[split_idx[0]:split_idx[1]]
         self.data_val = dataset[split_idx[1]:split_idx[2]]
         self.data_test = dataset[split_idx[2]:]
+        
+        # Calculate Mean and Std from LABELED TRAIN only (prevent leakage)
+        # We need to extract all y values from the labeled dataset
+        # Iterating is safer for subsets.
+        all_labels = []
+        for data in self.data_train_labeled:
+            all_labels.append(data.y)
+        all_labels = torch.stack(all_labels)
+        
+        self.mean = torch.mean(all_labels)
+        self.std = torch.std(all_labels)
+        
+        print(f"Normalizing targets: Mean={self.mean:.4f}, Std={self.std:.4f}")
+        # ----------------------
 
         # Set batch sizes. We want the labeled batch size to be the one given by the user, and the unlabeled one to be so that we have the same number of batches
         self.batch_size_train_labeled = self.batch_size_train
@@ -99,7 +113,7 @@ class QM9DataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             shuffle=shuffle,
             pin_memory=True,
-            persistent_workers=True
+            persistent_workers=self.num_workers > 0
         )
 
     def unsupervised_train_dataloader(self, shuffle=True) -> DataLoader:
@@ -109,7 +123,7 @@ class QM9DataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             shuffle=shuffle,
             pin_memory=True,
-            persistent_workers=True
+            persistent_workers=self.num_workers > 0
         )
 
 
@@ -120,7 +134,7 @@ class QM9DataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             shuffle=False,
             pin_memory=True,
-            persistent_workers=True
+            persistent_workers=self.num_workers > 0
         )
 
 
@@ -131,7 +145,7 @@ class QM9DataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             shuffle=False,
             pin_memory=True,
-            persistent_workers=True
+            persistent_workers=self.num_workers > 0
         )
 
 
@@ -143,7 +157,7 @@ class QM9DataModule(pl.LightningDataModule):
                 num_workers=self.num_workers,
                 shuffle=False,
                 pin_memory=True,
-                persistent_workers=True
+                persistent_workers=self.num_workers > 0
             )
             for dataset_name, dataset in self.ood_datasets.items()
         }
@@ -163,7 +177,7 @@ class QM9DataModule(pl.LightningDataModule):
                     num_workers=self.num_workers,
                     shuffle=False,
                     pin_memory=True,
-                    persistent_workers=True
+                    persistent_workers=self.num_workers > 0
                 )
                 ood_dataloaders.append(val_dataloader)
                 ood_names.append(dataset_name)

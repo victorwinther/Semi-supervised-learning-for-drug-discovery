@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import numpy as np
 import math
 if not hasattr(np, 'math'):
@@ -6,6 +9,7 @@ from itertools import chain
 import hydra
 import torch
 from omegaconf import OmegaConf
+from hydra.core.hydra_config import HydraConfig
 
 from utils import seed_everything
 
@@ -36,10 +40,32 @@ def main(cfg):
     if cfg.compile_model:
         model = torch.compile(model)
     models = [model]
-    trainer = hydra.utils.instantiate(cfg.trainer.init, models=models, logger=logger, datamodule=dm, device=device)
+    trainer = hydra.utils.instantiate(cfg.trainer.init, models=models, logger=logger, datamodule=dm, device=device,data_mean=dm.mean,data_std=dm.std)
 
     results = trainer.train(**cfg.trainer.train)
-    results = torch.Tensor(results)
+    if isinstance(results, torch.Tensor):
+        metrics = results.detach().cpu().tolist()
+        results = {f"metric_{idx}": float(value) for idx, value in enumerate(metrics)}
+    elif isinstance(results, (list, tuple)):
+        results = {f"metric_{idx}": float(value) for idx, value in enumerate(results)}
+
+    dataset_cfg = hparams.get("dataset", {}) if isinstance(hparams, dict) else {}
+    trainer_cfg = hparams.get("trainer", {}) if isinstance(hparams, dict) else {}
+    model_cfg = hparams.get("model", {}) if isinstance(hparams, dict) else {}
+
+    report = {
+        "seed": int(cfg.seed),
+        "trainer": trainer_cfg.get("method", "unknown"),
+        "model": model_cfg.get("name", "unknown"),
+        "dataset": dataset_cfg.get("dataset_name") or dataset_cfg.get("name", "unknown"),
+        "metrics": results,
+        "config": hparams,
+    }
+
+    run_dir = Path(HydraConfig.get().runtime.output_dir)
+    metrics_path = run_dir / "metrics.json"
+    metrics_path.write_text(json.dumps(report, indent=2))
+    print(f"Saved metrics summary to {metrics_path}")
 
 
 

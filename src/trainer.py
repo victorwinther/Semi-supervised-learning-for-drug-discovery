@@ -4,6 +4,12 @@ import numpy as np
 import torch
 from tqdm import tqdm
 from typing import Optional
+torch.backends.cudnn.benchmark = True
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+# Ensure we can check the type of scheduler
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 
 class SemiSupervisedEnsemble:
     def __init__(
@@ -33,24 +39,25 @@ class SemiSupervisedEnsemble:
         # Logging
         self.logger = logger
 
-    def validate(self):
+    def _evaluate_loader(self, dataloader):
         for model in self.models:
             model.eval()
 
-        val_losses = []
-        
+        losses = []
         with torch.no_grad():
-            for x, targets in self.val_dataloader:
+            for x, targets in dataloader:
                 x, targets = x.to(self.device), targets.to(self.device)
-                
-                # Ensemble prediction
                 preds = [model(x) for model in self.models]
                 avg_preds = torch.stack(preds).mean(0)
-                
-                val_loss = torch.nn.functional.mse_loss(avg_preds, targets)
-                val_losses.append(val_loss.item())
-        val_loss = np.mean(val_losses)
-        return {"val_MSE": val_loss}
+                loss = torch.nn.functional.mse_loss(avg_preds, targets)
+                losses.append(loss.item())
+        return float(np.mean(losses)) if losses else float("nan")
+
+    def validate(self):
+        return {"val_MSE": self._evaluate_loader(self.val_dataloader)}
+
+    def test(self):
+        return {"test_MSE": self._evaluate_loader(self.test_dataloader)}
 
     def train(self, total_epochs, validation_interval):
         #self.logger.log_dict()
@@ -81,8 +88,10 @@ class SemiSupervisedEnsemble:
             self.logger.log_dict(summary_dict, step=epoch)
             
         final_metrics = self.validate()
-        self.logger.log_dict(final_metrics, step=total_epochs)
-        return list(final_metrics.values())
+        test_metrics = self.test()
+        summary = {**final_metrics, **test_metrics}
+        self.logger.log_dict(summary, step=total_epochs)
+        return summary
 
 
 from copy import deepcopy
@@ -92,7 +101,12 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 from tqdm import tqdm
-
+import torch
+import torch.nn.functional as F
+import numpy as np
+from copy import deepcopy
+from typing import Optional, List
+from tqdm import tqdm
 
 class MeanTeacherTrainer:
     def __init__(
@@ -106,27 +120,24 @@ class MeanTeacherTrainer:
         datamodule,
         ema_decay: float = 0.999,
         unsup_weight: float = 0.1,
-        ramp_up_epochs: Optional[int] = None,  
+        ramp_up_epochs: Optional[int] = None,
+        consistency_criterion: str = "mse",  # "mse" or "l1"
+        augment_coords: bool = False,  # Enable coordinate augmentation
+        coord_noise_std: float = 0.05,  # Noise level in Angstroms
+        use_amp: bool = False, 
+        data_mean=None, # Passed from DataModule
+        data_std=None,  # Passed from DataModule
     ):
         """
-        Mean Teacher trainer for QM9.
-
-        Args:
-            models: list of models; we use models[0] as the student.
-            ema_decay: EMA decay for teacher update.
-            unsup_weight: MAX weight for the consistency loss on unlabeled data.
-            ramp_up_epochs: if not None, linearly ramp unsup_weight from 0
-                            to `unsup_weight` over this many epochs.
+        Mean Teacher trainer for semi-supervised learning.
         """
         assert len(models) == 1, "MeanTeacherTrainer currently assumes a single student model."
 
         self.device = device
         self.student = models[0].to(device)
-        self.teacher = deepcopy(self.student).to(device)
-
-        # teacher is not directly optimized, only updated via EMA
-        for p in self.teacher.parameters():
-            p.requires_grad = False
+        
+        # Initialize teacher AFTER student is on device
+        self.teacher = self._create_teacher(self.student)
 
         # Optim / sched
         self.supervised_criterion = supervised_criterion
@@ -144,21 +155,64 @@ class MeanTeacherTrainer:
 
         # MT hyperparams
         self.ema_decay = ema_decay
-        self.unsup_weight = unsup_weight          # max unsup weight
-        self.ramp_up_epochs = ramp_up_epochs      # epochs for linear ramp
+        self.unsup_weight = unsup_weight
+        self.ramp_up_epochs = ramp_up_epochs
+        self.consistency_criterion = consistency_criterion
+        
+        # Augmentation settings
+        self.augment_coords = augment_coords
+        self.coord_noise_std = coord_noise_std
+        
+        # Mixed Precision Setup
+        self.use_amp = use_amp
+        self.scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+        
+        # Track global step for more granular EMA updates
+        self.global_step = 0
+        
+        # Store normalization stats on device
+        # If None provided, default to no-op (mean=0, std=1)
+        self.data_mean = data_mean.to(device) if data_mean is not None else torch.tensor(0.0, device=device)
+        self.data_std = data_std.to(device) if data_std is not None else torch.tensor(1.0, device=device)
+
+    def _create_teacher(self, student):
+        """Create teacher model as a deep copy of student."""
+        teacher = deepcopy(student).to(self.device)
+        
+        # Teacher is not directly optimized, only updated via EMA
+        for p in teacher.parameters():
+            p.requires_grad = False
+        
+        teacher.eval()  # Teacher always in eval mode
+        return teacher
+
+    def _augment_batch(self, batch):
+        """Apply coordinate noise augmentation to molecular graphs."""
+        if not self.augment_coords:
+            return batch
+        
+        # For PyG Data objects, we need to clone the coordinate tensor
+        if hasattr(batch, 'pos') and batch.pos is not None:
+            # Shallow copy batch structure, deep copy pos
+            import copy
+            batch = copy.copy(batch)
+            noise = torch.randn_like(batch.pos) * self.coord_noise_std
+            batch.pos = batch.pos + noise
+        
+        return batch
 
     @torch.no_grad()
     def _update_teacher(self):
+        """Update teacher using EMA on both parameters and buffers."""
         alpha = self.ema_decay
-
-        # 1) EMA on parameters (weights, biases)
+        
+        # EMA on parameters (weights, biases)
         for t_param, s_param in zip(self.teacher.parameters(), self.student.parameters()):
             t_param.data.mul_(alpha).add_(s_param.data, alpha=1.0 - alpha)
 
-        # 2) Direct copy of buffers (e.g. BatchNorm running_mean / running_var)
+        # EMA on buffers (BatchNorm running stats, etc.)
         for t_buffer, s_buffer in zip(self.teacher.buffers(), self.student.buffers()):
-            t_buffer.data.copy_(s_buffer.data)
-
+            t_buffer.data.mul_(alpha).add_(s_buffer.data, alpha=1.0 - alpha)
 
     def _get_unlabeled_batch(self, unlabeled_iter):
         """Safely get next unlabeled batch, cycling the iterator if needed."""
@@ -176,17 +230,17 @@ class MeanTeacherTrainer:
         ramp_factor = min(1.0, epoch / float(self.ramp_up_epochs))
         return self.unsup_weight * ramp_factor
 
-    def validate(self):
-        """
-        Evaluate BOTH teacher and student on the validation set.
+    def _compute_consistency_loss(self, student_pred, teacher_pred):
+        """Compute consistency loss between student and teacher predictions."""
+        if self.consistency_criterion == "mse":
+            return F.mse_loss(student_pred, teacher_pred)
+        elif self.consistency_criterion == "l1":
+            return F.l1_loss(student_pred, teacher_pred)
+        else:
+            raise ValueError(f"Unknown consistency criterion: {self.consistency_criterion}")
 
-        Returns:
-            {
-                "val_MSE_teacher": ...,
-                "val_MSE_student": ...,
-                "val_MSE": ... (alias for teacher MSE, for compatibility)
-            }
-        """
+    def _evaluate_loader(self, dataloader, prefix: str):
+        """Evaluate teacher and student on the provided dataloader."""
         self.teacher.eval()
         self.student.eval()
 
@@ -194,90 +248,170 @@ class MeanTeacherTrainer:
         student_losses = []
 
         with torch.no_grad():
-            for x, targets in self.val_dataloader:
+            for batch in dataloader:
+                if len(batch) == 2:
+                    x, targets = batch
+                else:
+                    x, targets = batch[0], batch[1]
+                    
                 x, targets = x.to(self.device), targets.to(self.device)
+                
+                # 1. Get predictions (These are normalized values)
+                teacher_preds_norm = self.teacher(x)
+                student_preds_norm = self.student(x)
 
-                teacher_preds = self.teacher(x)
-                student_preds = self.student(x)
+                # 2. Denormalize to Real Units (e.g. eV) before computing metrics
+                teacher_preds_real = (teacher_preds_norm * self.data_std) + self.data_mean
+                student_preds_real = (student_preds_norm * self.data_std) + self.data_mean
+                
+                # 3. Compute error against real targets
+                teacher_losses.append(F.mse_loss(teacher_preds_real, targets).item())
+                student_losses.append(F.mse_loss(student_preds_real, targets).item())
 
-                teacher_losses.append(F.mse_loss(teacher_preds, targets).item())
-                student_losses.append(F.mse_loss(student_preds, targets).item())
-
-        val_teacher = float(np.mean(teacher_losses)) if teacher_losses else float("nan")
-        val_student = float(np.mean(student_losses)) if student_losses else float("nan")
+        teacher_score = float(np.mean(teacher_losses)) if teacher_losses else float("nan")
+        student_score = float(np.mean(student_losses)) if student_losses else float("nan")
 
         return {
-            "val_MSE_teacher": val_teacher,
-            "val_MSE_student": val_student,
-            "val_MSE": val_teacher,  
+            f"{prefix}_MSE_teacher": teacher_score,
+            f"{prefix}_MSE_student": student_score,
+            f"{prefix}_MSE": teacher_score,
         }
 
-    def train(self, total_epochs, validation_interval):
-        for epoch in (pbar := tqdm(range(1, total_epochs + 1))):
+    def validate(self):
+        return self._evaluate_loader(self.val_dataloader, "val")
 
+    def test(self):
+        return self._evaluate_loader(self.test_dataloader, "test")
+
+    def train(self, total_epochs, validation_interval=1):
+        """
+        Train the Mean Teacher model with Mixed Precision support.
+        """
+
+        for epoch in (pbar := tqdm(range(1, total_epochs + 1))):
             self.student.train()
-            self.teacher.eval()  # teacher is used only for targets
+            self.teacher.eval()
 
             sup_losses_logged = []
             cons_losses_logged = []
+            total_losses_logged = []
 
-            # compute epoch-specific unsup weight (with ramp-up)
             current_unsup_weight = self._current_unsup_weight(epoch)
-
             unlabeled_iter = iter(self.unlabeled_loader)
 
-            for (x_l, y_l) in self.labeled_loader:
+            for batch_idx, batch in enumerate(self.labeled_loader):
+                # 1. Prepare Data
+                if len(batch) == 2:
+                    x_l, y_l = batch
+                else:
+                    x_l, y_l = batch[0], batch[1]
+                    
                 x_l, y_l = x_l.to(self.device), y_l.to(self.device)
 
-                # Get unlabeled batch (ignore its labels)
-                (x_u, _), unlabeled_iter = self._get_unlabeled_batch(unlabeled_iter)
+                # Normalize Targets to N(0,1) for training stability
+                y_l_normalized = (y_l - self.data_mean) / self.data_std
+
+                unlabeled_batch, unlabeled_iter = self._get_unlabeled_batch(unlabeled_iter)
+                if len(unlabeled_batch) == 2:
+                    x_u, _ = unlabeled_batch
+                else:
+                    x_u = unlabeled_batch[0]
                 x_u = x_u.to(self.device)
 
                 self.optimizer.zero_grad()
 
-                # ----- Supervised loss (student on labeled data) -----
-                preds_l = self.student(x_l)
-                sup_loss = self.supervised_criterion(preds_l, y_l)
+                # 2. Forward Pass with Autocast (Mixed Precision)
+                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=self.use_amp):
+                    # Supervised forward
+                    preds_l = self.student(x_l)
+                    sup_loss = self.supervised_criterion(preds_l, y_l_normalized)
 
-                # ----- Consistency loss (student vs teacher on unlabeled) -----
-                with torch.no_grad():
-                    teacher_u = self.teacher(x_u)
+                    # Consistency forward
+                    x_u_student = self._augment_batch(x_u)
+                    x_u_teacher = x_u 
+                    
+                    with torch.no_grad():
+                        teacher_u = self.teacher(x_u_teacher)
 
-                student_u = self.student(x_u)
-                cons_loss = F.mse_loss(student_u, teacher_u)
+                    student_u = self.student(x_u_student)
+                    cons_loss = self._compute_consistency_loss(student_u, teacher_u)
 
-                loss = sup_loss + current_unsup_weight * cons_loss
-                loss.backward()
-                self.optimizer.step()
+                    # Total loss
+                    total_loss = sup_loss + current_unsup_weight * cons_loss
 
-                # EMA teacher update
+                # 3. Backward Pass with Scaler
+                self.scaler.scale(total_loss).backward()
+                
+                # Unscale logic for Gradient Clipping
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.student.parameters(), max_norm=10.0)
+                
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+
+                # 4. Update Teacher and Log
                 self._update_teacher()
+                self.global_step += 1
 
                 sup_losses_logged.append(sup_loss.detach().item())
                 cons_losses_logged.append(cons_loss.detach().item())
+                total_losses_logged.append(total_loss.detach().item())
 
-            # Scheduler step per epoch
-            self.scheduler.step()
-
-            sup_losses_logged = float(np.mean(sup_losses_logged)) if sup_losses_logged else float("nan")
-            cons_losses_logged = float(np.mean(cons_losses_logged)) if cons_losses_logged else float("nan")
+            # Stats
+            avg_sup_loss = float(np.mean(sup_losses_logged)) if sup_losses_logged else float("nan")
+            avg_cons_loss = float(np.mean(cons_losses_logged)) if cons_losses_logged else float("nan")
+            avg_total_loss = float(np.mean(total_losses_logged)) if total_losses_logged else float("nan")
 
             summary_dict = {
-                "supervised_loss": sup_losses_logged,
-                "consistency_loss": cons_losses_logged,  # unweighted cons loss
-                "unsup_weight_epoch": current_unsup_weight,
+                "epoch": epoch,
+                "supervised_loss": avg_sup_loss,
+                "consistency_loss": avg_cons_loss,
+                "total_loss": avg_total_loss,
+                "unsup_weight": current_unsup_weight,
+                "learning_rate": self.optimizer.param_groups[0]['lr'],
             }
 
+            # --- Validation Logic ---
+            val_metrics = {}
             if epoch % validation_interval == 0 or epoch == total_epochs:
                 val_metrics = self.validate()
                 summary_dict.update(val_metrics)
-                pbar.set_postfix(summary_dict)
+                pbar.set_postfix({
+                    "sup": f"{avg_sup_loss:.4f}",
+                    "cons": f"{avg_cons_loss:.4f}",
+                    "val_t": f"{val_metrics.get('val_MSE_teacher', float('nan')):.4f}",
+                })
+
+            # --- SCHEDULER LOGIC (MODIFIED) ---
+            # Check if using ReduceLROnPlateau
+            if isinstance(self.scheduler, ReduceLROnPlateau):
+                # Only step if we actually validated this epoch and have a metric
+                if 'val_MSE_teacher' in val_metrics:
+                    self.scheduler.step(val_metrics['val_MSE_teacher'])
+            else:
+                # Standard schedulers (StepLR, Cosine, etc.) step every epoch
+                self.scheduler.step()
 
             self.logger.log_dict(summary_dict, step=epoch)
 
-        final_metrics = self.validate()
-        self.logger.log_dict(final_metrics, step=total_epochs)
-        return list(final_metrics.values())
+        # Final evaluation
+        final_val_metrics = self.validate()
+        test_metrics = self.test()
+        
+        final_summary = {
+            "final_epoch": total_epochs,
+            **{f"final_{k}": v for k, v in final_val_metrics.items()},
+            **test_metrics,
+        }
+        
+        self.logger.log_dict(final_summary, step=total_epochs)
+        
+        print("\n" + "="*60)
+        print("Training Complete!")
+        print(f"Final Val MSE (Teacher): {final_val_metrics.get('val_MSE_teacher', float('nan')):.6f}")
+        print("="*60)
+        
+        return final_summary
 
 class NCPS:
     """
@@ -390,18 +524,24 @@ class NCPS:
             return torch.tensor(0.0, device=self.device)
         return torch.stack(losses).mean() * weight
 
-    def validate(self):
+    def _evaluate_loader(self, dataloader):
         for model in self.models:
             model.eval()
 
-        val_losses = []
+        losses = []
         with torch.no_grad():
-            for x, targets in self.val_dataloader:
+            for x, targets in dataloader:
                 x, targets = x.to(self.device), targets.to(self.device)
                 preds = torch.stack([model(x) for model in self.models]).mean(dim=0)
-                val_loss = torch.nn.functional.mse_loss(preds, targets)
-                val_losses.append(val_loss.item())
-        return {"val_MSE": float(np.mean(val_losses)) if val_losses else float("nan")}
+                loss = torch.nn.functional.mse_loss(preds, targets)
+                losses.append(loss.item())
+        return float(np.mean(losses)) if losses else float("nan")
+
+    def validate(self):
+        return {"val_MSE": self._evaluate_loader(self.val_dataloader)}
+
+    def test(self):
+        return {"test_MSE": self._evaluate_loader(self.test_dataloader)}
 
     def train(self, total_epochs, validation_interval):
         unsupervised_iterator = (
@@ -448,8 +588,10 @@ class NCPS:
             self.logger.log_dict(summary_dict, step=epoch)
 
         final_metrics = self.validate()
-        self.logger.log_dict(final_metrics, step=total_epochs)
-        return list(final_metrics.values())
+        test_metrics = self.test()
+        summary = {**final_metrics, **test_metrics}
+        self.logger.log_dict(summary, step=total_epochs)
+        return summary
     
 class ConsistencyAugmentationTrainer:
     def __init__(
@@ -534,18 +676,21 @@ class ConsistencyAugmentationTrainer:
             
         return batch_aug
 
-    def validate(self):
+    def _evaluate_loader(self, dataloader):
         self.model.eval()
-        val_losses = []
-        
+        losses = []
         with torch.no_grad():
-            for x, targets in self.val_dataloader:
+            for x, targets in dataloader:
                 x, targets = x.to(self.device), targets.to(self.device)
                 preds = self.model(x)
-                val_losses.append(F.mse_loss(preds, targets).item())
-                
-        val_loss = np.mean(val_losses) if val_losses else float("nan")
-        return {"val_MSE": val_loss}
+                losses.append(F.mse_loss(preds, targets).item())
+        return float(np.mean(losses)) if losses else float("nan")
+
+    def validate(self):
+        return {"val_MSE": self._evaluate_loader(self.val_dataloader)}
+
+    def test(self):
+        return {"test_MSE": self._evaluate_loader(self.test_dataloader)}
 
     def train(self, total_epochs, validation_interval):
         for epoch in (pbar := tqdm(range(1, total_epochs + 1))):
@@ -613,5 +758,7 @@ class ConsistencyAugmentationTrainer:
             self.logger.log_dict(summary_dict, step=epoch)
             
         final_metrics = self.validate()
-        self.logger.log_dict(final_metrics, step=total_epochs)
-        return list(final_metrics.values())
+        test_metrics = self.test()
+        summary = {**final_metrics, **test_metrics}
+        self.logger.log_dict(summary, step=total_epochs)
+        return summary

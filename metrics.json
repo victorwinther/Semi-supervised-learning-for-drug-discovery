@@ -1,0 +1,86 @@
+{
+  "seed": 0,
+  "trainer": "semi-supervised-ensemble",
+  "model": "gcn",
+  "dataset": "qm9",
+  "metrics": {
+    "val_MSE": 35.74426460266113,
+    "test_MSE": 36.20990562438965
+  },
+  "config": {
+    "dataset": {
+      "dataset_name": "qm9",
+      "num_outputs": 1,
+      "init": {
+        "_target_": "qm9.QM9DataModule",
+        "data_augmentation": false,
+        "name": "qm9",
+        "target": 2,
+        "data_dir": "./data",
+        "batch_size_train": 64,
+        "batch_size_inference": 256,
+        "num_workers": 0,
+        "splits": [
+          0.6,
+          0.1,
+          0.15,
+          0.15
+        ],
+        "seed": 0,
+        "subset_size": 2000
+      }
+    },
+    "trainer": {
+      "method": "semi-supervised-ensemble",
+      "train": {
+        "total_epochs": 5,
+        "validation_interval": 5
+      },
+      "init": {
+        "_target_": "trainer.SemiSupervisedEnsemble",
+        "supervised_criterion": {
+          "_target_": "torch.nn.MSELoss"
+        },
+        "optimizer": {
+          "_target_": "torch.optim.AdamW",
+          "_partial_": true,
+          "lr": 0.001,
+          "weight_decay": 0.005
+        },
+        "scheduler": {
+          "_target_": "torch.optim.lr_scheduler.StepLR",
+          "_partial_": true,
+          "step_size": 1,
+          "gamma": 0.9
+        }
+      }
+    },
+    "logger": {
+      "_target_": "logger.WandBLogger",
+      "group": "gcn_qm9",
+      "name": "gcn_seed=0",
+      "job_type": "semi-supervised-ensemble",
+      "entity": "victorwinther-technical-university-of-denmark-",
+      "project_name": "semi-supervised-learning-for-drug-discovery",
+      "disable": false,
+      "local_dir": "./logs"
+    },
+    "model": {
+      "name": "gcn",
+      "init": {
+        "_target_": "models.GCN",
+        "_partial_": false,
+        "num_node_features": 11,
+        "hidden_channels": 128,
+        "num_layers": 4,
+        "dropout": 0.1
+      }
+    },
+    "seed": 0,
+    "device": "unset",
+    "force_deterministic": false,
+    "debug_mode": false,
+    "result_dir": "./results",
+    "compile_model": false
+  }
+}

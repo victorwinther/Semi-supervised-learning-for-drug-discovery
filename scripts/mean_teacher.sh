@@ -51,7 +51,7 @@ esac
 python src/run.py \
   model=dimenetpp \
   trainer=mean-teacher \
-  trainer.train.total_epochs=40 \
+  trainer.train.total_epochs=100 \
   trainer.init.optimizer.lr=$BASE_LR \
   trainer.init.optimizer.weight_decay=$BASE_WD \
   trainer.init.ema_decay=$EMA \
