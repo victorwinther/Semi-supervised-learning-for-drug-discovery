@@ -49,6 +49,24 @@ def main(cfg):
     elif isinstance(results, (list, tuple)):
         results = {f"metric_{idx}": float(value) for idx, value in enumerate(results)}
 
+    # --------------------------------------------------------------
+    # Save the model
+    # --------------------------------------------------------------
+    run_dir = Path(HydraConfig.get().runtime.output_dir)
+    best_model_path = run_dir / "model.pt"
+
+    torch.save(
+        {
+            "state_dict": trainer.best_teacher_state,          # weights
+            "model_config": hparams["model"]["init"],          # model init kwargs
+            "data_mean": trainer.data_mean.detach().cpu(),     # for denorm
+            "data_std": trainer.data_std.detach().cpu(),
+        },
+        best_model_path,
+    )
+
+    print(f"Saved best teacher model to {best_model_path}")
+
     dataset_cfg = hparams.get("dataset", {}) if isinstance(hparams, dict) else {}
     trainer_cfg = hparams.get("trainer", {}) if isinstance(hparams, dict) else {}
     model_cfg = hparams.get("model", {}) if isinstance(hparams, dict) else {}

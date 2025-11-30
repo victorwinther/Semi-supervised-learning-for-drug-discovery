@@ -174,6 +174,11 @@ class MeanTeacherTrainer:
         # If None provided, default to no-op (mean=0, std=1)
         self.data_mean = data_mean.to(device) if data_mean is not None else torch.tensor(0.0, device=device)
         self.data_std = data_std.to(device) if data_std is not None else torch.tensor(1.0, device=device)
+        
+        # Best-checkpoint tracking
+        self.best_val = float("inf")
+        self.best_teacher_state = deepcopy(self.teacher.state_dict())
+        self.best_student_state = deepcopy(self.student.state_dict())
 
     def _create_teacher(self, student):
         """Create teacher model as a deep copy of student."""
@@ -244,8 +249,10 @@ class MeanTeacherTrainer:
         self.teacher.eval()
         self.student.eval()
 
-        teacher_losses = []
-        student_losses = []
+        teacher_losses_real = []
+        student_losses_real = []
+        teacher_losses_norm = []
+        student_losses_norm = []
 
         with torch.no_grad():
             for batch in dataloader:
@@ -260,21 +267,31 @@ class MeanTeacherTrainer:
                 teacher_preds_norm = self.teacher(x)
                 student_preds_norm = self.student(x)
 
+                # Targets normalized to the same space as training
+                targets_norm = (targets - self.data_mean) / self.data_std
+
                 # 2. Denormalize to Real Units (e.g. eV) before computing metrics
                 teacher_preds_real = (teacher_preds_norm * self.data_std) + self.data_mean
                 student_preds_real = (student_preds_norm * self.data_std) + self.data_mean
                 
                 # 3. Compute error against real targets
-                teacher_losses.append(F.mse_loss(teacher_preds_real, targets).item())
-                student_losses.append(F.mse_loss(student_preds_real, targets).item())
+                teacher_losses_real.append(F.mse_loss(teacher_preds_real, targets).item())
+                student_losses_real.append(F.mse_loss(student_preds_real, targets).item())
 
-        teacher_score = float(np.mean(teacher_losses)) if teacher_losses else float("nan")
-        student_score = float(np.mean(student_losses)) if student_losses else float("nan")
+                teacher_losses_norm.append(F.mse_loss(teacher_preds_norm, targets_norm).item())
+                student_losses_norm.append(F.mse_loss(student_preds_norm, targets_norm).item())
+
+        teacher_score_real = float(np.mean(teacher_losses_real)) if teacher_losses_real else float("nan")
+        student_score_real = float(np.mean(student_losses_real)) if student_losses_real else float("nan")
+        teacher_score_norm = float(np.mean(teacher_losses_norm)) if teacher_losses_norm else float("nan")
+        student_score_norm = float(np.mean(student_losses_norm)) if student_losses_norm else float("nan")
 
         return {
-            f"{prefix}_MSE_teacher": teacher_score,
-            f"{prefix}_MSE_student": student_score,
-            f"{prefix}_MSE": teacher_score,
+            f"{prefix}_MSE_teacher": teacher_score_real,
+            f"{prefix}_MSE_student": student_score_real,
+            f"{prefix}_MSE": teacher_score_real,
+            f"{prefix}_MSE_norm_teacher": teacher_score_norm, # same space as supervised_loss
+            f"{prefix}_MSE_norm_student": student_score_norm,
         }
 
     def validate(self):
@@ -282,6 +299,10 @@ class MeanTeacherTrainer:
 
     def test(self):
         return self._evaluate_loader(self.test_dataloader, "test")
+
+    def evaluate_train(self):
+        """Evaluate on the labeled training loader in real units."""
+        return self._evaluate_loader(self.labeled_loader, "train")
 
     def train(self, total_epochs, validation_interval=1):
         """
@@ -381,6 +402,13 @@ class MeanTeacherTrainer:
                     "cons": f"{avg_cons_loss:.4f}",
                     "val_t": f"{val_metrics.get('val_MSE_teacher', float('nan')):.4f}",
                 })
+            
+                # --- Best checkpoint tracking ---
+                current_val = val_metrics.get("val_MSE_teacher", float("inf"))
+                if current_val < self.best_val:
+                    self.best_val = current_val
+                    self.best_teacher_state = deepcopy(self.teacher.state_dict())
+                    self.best_student_state = deepcopy(self.student.state_dict())
 
             # --- SCHEDULER LOGIC (MODIFIED) ---
             # Check if using ReduceLROnPlateau
@@ -394,14 +422,20 @@ class MeanTeacherTrainer:
 
             self.logger.log_dict(summary_dict, step=epoch)
 
-        # Final evaluation
+        # Load best checkpoint before final evaluation
+        self.teacher.load_state_dict(self.best_teacher_state)
+        self.student.load_state_dict(self.best_student_state)
+
+        # Final evaluation (best checkpoint)
         final_val_metrics = self.validate()
         test_metrics = self.test()
+        train_metrics = self.evaluate_train()
         
         final_summary = {
             "final_epoch": total_epochs,
             **{f"final_{k}": v for k, v in final_val_metrics.items()},
             **test_metrics,
+            **train_metrics,
         }
         
         self.logger.log_dict(final_summary, step=total_epochs)

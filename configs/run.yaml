@@ -1,8 +1,8 @@
 defaults:
   - dataset: qm9
-  - trainer: semi-supervised-ensemble  # options: self-supervised, supervised
+  - trainer: mean-teacher  # options: self-supervised, supervised
   - logger: wandb
-  - model: visnet
+  - model: dimenetpp
   - _self_
 
 

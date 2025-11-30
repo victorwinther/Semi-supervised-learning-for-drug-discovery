@@ -1,32 +1,38 @@
 defaults:
   - _self_
 
-method: mean_teacher        
-  
+method: mean_teacher
+
 train:
-  total_epochs: 250
+  total_epochs: 50
   validation_interval: 10
 
 init:
   _target_: trainer.MeanTeacherTrainer
+
   supervised_criterion:
     _target_: torch.nn.MSELoss
+
   optimizer:
     _target_: torch.optim.AdamW
     _partial_: true
     lr: 0.001
     weight_decay: 0.005
-  scheduler:
-    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
-    _partial_: true
-    T_max: 250
-    eta_min: 1.0e-6   
-  ema_decay: 0.99
-  unsup_weight: 0.1     
-  ramp_up_epochs: 50
-  consistency_criterion: mse  
-  augment_coords: true    
-  coord_noise_std: 0.05   
-  use_amp: true    
 
-  
+  scheduler:
+    _target_: torch.optim.lr_scheduler.StepLR
+    _partial_: true
+    step_size: 1
+    gamma: 0.999
+
+  ema_decay: 0.99
+
+  unsup_weight: 1
+  ramp_up_epochs: 50
+
+  consistency_criterion: mse
+
+  augment_coords: true
+  coord_noise_std: 0.1
+
+  use_amp: true
