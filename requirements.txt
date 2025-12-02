@@ -46,3 +46,5 @@ typing_extensions==4.15.0
 urllib3==2.5.0
 wandb==0.22.3
 yarl==1.22.0
+# matplotlib==3.10.1
+
