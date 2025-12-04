@@ -10,14 +10,10 @@
 #BSUB -o out/qm9_arch_sweep_%J_%I.out
 #BSUB -e err/qm9_arch_sweep_%J_%I.err
 
-# Optional: activate your venv
 # source ~/.venvs/ssl/bin/activate
 
-########################
-# 1) Define search grid
-########################
 
-MODELS=(gcn gin schnet dimenetpp visnet attentivefp)
+MODELS=(gcn gin schnet dimenetpp)
 
 LRS=(0.0005 0.0005 0.0005 0.001 0.001 0.001)
 WDS=(0.0    0.0001 0.0005 0.0   0.0001 0.0005)
@@ -29,9 +25,6 @@ EPOCHS=150
 BATCH_TRAIN=32
 BATCH_INF=64
 
-###########################################
-# 2) Map LSB_JOBINDEX → (model, LR, WD)
-###########################################
 
 IDX=$((LSB_JOBINDEX - 1))
 MODEL_IDX=$(( IDX / NUM_COMBOS ))
@@ -41,9 +34,6 @@ MODEL=${MODELS[$MODEL_IDX]}
 LR=${LRS[$COMBO_IDX]}
 WD=${WDS[$COMBO_IDX]}
 
-###########################################
-# 3) Optional per-model hyperparams
-###########################################
 
 MODEL_OVERRIDES=""
 
@@ -60,23 +50,12 @@ case "$MODEL" in
   dimenetpp)
     MODEL_OVERRIDES="model.init.hidden_channels=128 model.init.num_blocks=4"
     ;;
-  visnet)
-    MODEL_OVERRIDES="model.init.hidden_channels=128"
-    ;;
 esac
 
-###########################################
-# 4) W&B grouping via Hydra overrides
-###########################################
-
 GROUP="arch_sweep_qm9"
-PROJECT="semi-supervised-learning-for-drug-discovery"   # or "qm9_ssl" if you prefer
+PROJECT="semi-supervised-learning-for-drug-discovery"
 
 RUN_NAME="${MODEL}_${TRAINER}_lr${LR}_wd${WD}_job${LSB_JOBINDEX}"
-
-###########################################
-# 5) Run
-###########################################
 
 set -x
 

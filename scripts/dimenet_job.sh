@@ -9,13 +9,11 @@
 #BSUB -o out/dimenet_MT_%J.out
 #BSUB -e err/dimenet_MT_%J.err
 
-# Set environment variables for optimization
 export CUDA_VISIBLE_DEVICES=0
 export OMP_NUM_THREADS=8
 export MKL_NUM_THREADS=8
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# Run your training (removed compile_model=true)
 python src/run.py model=dimenetpp trainer=mean-teacher \
   dataset.init.batch_size_train=384 \
   dataset.init.num_workers=8 \

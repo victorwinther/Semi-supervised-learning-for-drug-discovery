@@ -10,13 +10,8 @@
 #BSUB -e err/gnn_ssl_sweep_%J_%I.err
 
 
-# ==============================================================================
-# PHASE 1: Architecture Search (Full Supervised)
-# Goal: Prove which architecture (GCN vs. SchNet vs. DimeNet) handles the data best.
-# ==============================================================================
 echo "Starting Phase 1: Architecture Search"
 
-# GCN (Simple baseline)
 python src/run.py \
     model=gcn \
     trainer=semi-supervised-ensemble \
@@ -24,9 +19,7 @@ python src/run.py \
     logger.group="Phase1_Arch_Search" \
     logger.name="GCN_Supervised_Full" \
     dataset.splits=[110000,0,10000,10000] 
-    # Note: 0 unlabeled data for supervised benchmark
 
-# DimeNet++ (Advanced 3D model)
 python src/run.py \
     model=dimenetpp \
     trainer=semi-supervised-ensemble \
@@ -35,33 +28,15 @@ python src/run.py \
     logger.name="DimeNetPP_Supervised_Full" \
     dataset.splits=[110000,0,10000,10000]
 
-# ViSNet (Vector-Scalar Interaction)
-python src/run.py \
-    model=visnet \
-    trainer=semi-supervised-ensemble \
-    dataset.batch_size_train=32 \
-    logger.group="Phase1_Arch_Search" \
-    logger.name="ViSNet_Supervised_Full" \
-    dataset.splits=[110000,0,10000,10000]
-
-
-# ==============================================================================
-# PHASE 2: The Low-Data Challenge (Supervised Baseline)
-# Goal: Establish the "Lower Bound". How much performance do we lose with only 1000 labels?
-# We assume DimeNet was the best from Phase 1 (Change 'model' if GCN was better)
-# ==============================================================================
 echo "Starting Phase 2: Low Data Baselines"
 
-# 1000 Labels (approx 1% of QM9)
 python src/run.py \
     model=dimenetpp \
     trainer=semi-supervised-ensemble \
     logger.group="Phase2_LowData_Baseline" \
     logger.name="DimeNet_1k_Labels" \
     dataset.splits=[1000,109000,10000,10000] 
-    # Logic: 1000 labeled, rest pushed to "unlabeled" (ignored by supervised trainer)
 
-# 5000 Labels
 python src/run.py \
     model=dimenetpp \
     trainer=semi-supervised-ensemble \
@@ -70,14 +45,8 @@ python src/run.py \
     dataset.splits=[5000,105000,10000,10000]
 
 
-# ==============================================================================
-# PHASE 3: Semi-Supervised Learning Methods
-# Goal: Beat the Phase 2 "1k Labels" baseline using the unlabeled data.
-# ==============================================================================
 echo "Starting Phase 3: SSL Methods"
 
-# Method A: Mean Teacher (Consistency between Student and EMA Teacher)
-# We tune the consistency weight (unsup_weight)
 for WEIGHT in 0.1 1.0 10.0
 do
     python src/run.py \
@@ -89,8 +58,6 @@ do
         dataset.splits=[1000,109000,10000,10000]
 done
 
-# Method B: Consistency Augmentation (Coordinate Noise + Feature Masking)
-# We tune the noise level
 for NOISE in 0.01 0.05
 do
     python src/run.py \
@@ -102,7 +69,6 @@ do
         dataset.splits=[1000,109000,10000,10000]
 done
 
-# Method C: Noisy Student / Self-Training (Optional, via NCPS trainer)
 python src/run.py \
     model=dimenetpp \
     trainer=ncps \

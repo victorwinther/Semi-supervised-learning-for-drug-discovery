@@ -18,7 +18,6 @@
 #BSUB -o out/hero_%J.out
 #BSUB -e err/hero_%J.err
 
-# -- end of LSF options --
 
 echo "Job running on node:"
 hostname
@@ -26,17 +25,12 @@ hostname
 echo "GPU Status:"
 nvidia-smi
 
-# Load CUDA (Matches the guide's recommendation for A100)
 module load cuda/11.8
 
-# Set environment variables for speed
 export OMP_NUM_THREADS=8
 
 echo "Starting Training..."
 
-# The "Hero" Command
-# Optimized for Speed (workers=4, inf_batch=2048)
-# Optimized for Accuracy (noise=0.01, unsup=5.0, decay=0.999)
 
 source ../DeepLearning/venv/bin/activate
 

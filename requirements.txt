@@ -47,4 +47,5 @@ urllib3==2.5.0
 wandb==0.22.3
 yarl==1.22.0
 # matplotlib==3.10.1
+scikit-learn==1.7.2
 

@@ -12,13 +12,9 @@
 
 # source ~/.venvs/ssl/bin/activate
 
-########################
-# 1) Fixed model & HPs
-########################
 
 MODEL="dimenetpp"
 
-# Plug in the *best* LR/WD you found in Stage 1 for dimenetpp:
 LR=0.001
 WD=0.0005
 
@@ -26,12 +22,8 @@ EPOCHS=150
 BATCH_TRAIN=32
 BATCH_INF=64
 
-# Same DimeNet++ overrides you liked from earlier
 MODEL_OVERRIDES="model.init.hidden_channels=128 model.init.num_blocks=4"
 
-########################
-# 2) Trainers to compare
-########################
 
 TRAINERS=(
   "semi-supervised-ensemble"
@@ -42,17 +34,11 @@ TRAINERS=(
 
 TRAINER=${TRAINERS[$((LSB_JOBINDEX - 1))]}
 
-########################
-# 3) W&B naming
-########################
 
 export WANDB_PROJECT="qm9_ssl"
 export WANDB_GROUP="dimenetpp_ssl_methods"
 export WANDB_NAME="${MODEL}_${TRAINER}_lr${LR}_wd${WD}_job${LSB_JOBINDEX}"
 
-########################
-# 4) Run
-########################
 
 set -x
 

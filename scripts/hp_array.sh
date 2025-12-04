@@ -12,7 +12,6 @@
 # source ~/.venvs/ssl/bin/activate
 
 
-# Choose hyperparams based on LSB_JOBINDEX
 case "$LSB_JOBINDEX" in
   1)
     LR=0.0005

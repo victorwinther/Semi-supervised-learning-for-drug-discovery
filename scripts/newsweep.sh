@@ -10,54 +10,39 @@
 #BSUB -o out/mt_sweep_%J_%I.out
 #BSUB -e err/mt_sweep_%J_%I.err
 
-# Environment optimization (FIXED: match 4 cores)
 export CUDA_VISIBLE_DEVICES=0
-export OMP_NUM_THREADS=4      # Changed from 8 to 4
-export MKL_NUM_THREADS=4      # Changed from 8 to 4
+export OMP_NUM_THREADS=4
+export MKL_NUM_THREADS=4
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-
-########################
-# 1) Define Search Grid
-########################
 
 MODEL="dimenetpp"
 TRAINER="mean-teacher"
 
-# Fixed settings (from your previous runs)
 BEST_LR=0.001
 BEST_WD=0.005
 
-# Fast experimentation settings
-SUBSET_SIZE=10000        # Fast training (~1.5s/it)
-EPOCHS=200              # Enough to see convergence
+SUBSET_SIZE=10000
+EPOCHS=200
 VAL_INTERVAL=10
-BATCH_SIZE=128           # Changed from 256 to prevent OOM
-NUM_WORKERS=4            # Matches available cores
+BATCH_SIZE=128
+NUM_WORKERS=4
 
-# SSL Hyperparameters to sweep
-# unsup_weight: How much consistency loss matters
+
 WEIGHTS=(0.1 0.5 1.0 2.0)
 
-# ema_decay: Teacher update speed (higher = slower/more stable)
 DECAYS=(0.99 0.995 0.999)
 
-# data_augmentation: Enable/disable coordinate noise
 AUG_SETTINGS=(false true)
 
 NUM_WEIGHTS=${#WEIGHTS[@]}
 NUM_DECAYS=${#DECAYS[@]}
 NUM_AUG=${#AUG_SETTINGS[@]}
 
-# Ramp up: linear increase of unsup_weight over first N epochs
 RAMP_UP=50
 
-###########################################
-# 2) Map LSB_JOBINDEX -> (weight, decay, aug)
-###########################################
 
 IDX=$((LSB_JOBINDEX - 1))
 
-# 3D grid indexing: weight -> decay -> aug
 AUG_IDX=$(( IDX % NUM_AUG ))
 TEMP=$(( IDX / NUM_AUG ))
 DECAY_IDX=$(( TEMP % NUM_DECAYS ))
@@ -67,9 +52,6 @@ UNSUP_WEIGHT=${WEIGHTS[$WEIGHT_IDX]}
 EMA_DECAY=${DECAYS[$DECAY_IDX]}
 DATA_AUG=${AUG_SETTINGS[$AUG_IDX]}
 
-###########################################
-# 3) W&B Grouping
-###########################################
 
 GROUP="mean_teacher_sweep_fast"
 PROJECT="semi-supervised-learning-for-drug-discovery"
@@ -82,9 +64,6 @@ fi
 
 RUN_NAME="${MODEL}_w${UNSUP_WEIGHT}_d${EMA_DECAY}${AUG_SUFFIX}"
 
-###########################################
-# 4) Run Training
-###########################################
 
 echo "=========================================="
 echo "Job $LSB_JOBINDEX: Starting sweep run"

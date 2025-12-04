@@ -11,7 +11,6 @@
 
 # source ~/.venvs/ssl/bin/activate
 
-# Fix these from your best run in step 2:
 BASE_LR=0.001
 BASE_WD=0.0001
 
@@ -23,7 +22,7 @@ case "$LSB_JOBINDEX" in
     ;;
   2)
     EMA=0.999
-    UNSUP=0.10   # your current setting
+    UNSUP=0.10   
     RAMP=50
     ;;
   3)

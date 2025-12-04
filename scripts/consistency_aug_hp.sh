@@ -11,17 +11,11 @@
 
 source ../DeepLearning/venv/bin/activate
 
-# Common settings
+
 BASE_LR=0.001
 BASE_WD=0.0001
 RAMP=50
 
-# Case 1: Baseline (Low noise, moderate weight)
-# Case 2: Higher Consistency Weight (Focus more on unlabeled consistency)
-# Case 3: Higher Noise (For 3D models like ViSNet/SchNet, makes them more robust)
-# Case 4: Higher Masking (For 2D models like GCN/GIN, makes them rely on context)
-# Case 5: Aggressive Augmentation (High Noise + Moderate Weight)
-# Case 6: High Weight + High Noise (Force strong consistency)
 
 case "$LSB_JOBINDEX" in
   1)

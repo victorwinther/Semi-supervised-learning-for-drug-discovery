@@ -21,9 +21,8 @@ init:
     _partial_: true
     step_size: 1
     gamma: 0.975
-  
-  # Consistency Hyperparameters
-  consistency_weight: 1.0   # How much to weigh the augmentation loss
-  ramp_up_epochs: 50        # Slowly increase weight to stabilize early training
-  aug_noise_std: 0.1        # Jitter for 3D coordinates (important for SchNet/ViSNet)
-  aug_mask_prob: 0.15       # Probability of zeroing out features (important for GCN)
+
+  consistency_weight: 1.0
+  ramp_up_epochs: 50
+  aug_noise_std: 0.1
+  aug_mask_prob: 0.15
