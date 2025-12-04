@@ -1,58 +1,69 @@
-# GNN Introduction
+# Semi-Supervised Learning for Drug Discovery
 
-This project provides an introduction to Graph Neural Networks (GNNs) using PyTorch and PyTorch Geometric on the dataset QM9.
+Semi-supervised learning methods for molecular property prediction on the QM9 dataset. Developed for the Deep Learning course at DTU.
+
+## Overview
+
+This project explores semi-supervised learning techniques to predict HOMO energy from molecular graphs, using only 8% labeled data while leveraging 72% unlabeled data.
+
+**Methods implemented:**
+
+- Mean Teacher with EMA
+- n-CPS (Cross Pseudo Supervision)
+- Consistency Regularization with augmentations
+
+**Models:**
+
+- GCN, GIN (2D graph-based)
+- SchNet, DimeNet++ (3D coordinate-based)
 
 ## Installation
 
-To run this project, you need to install the required Python packages. You can install them using pip:
-
 ```bash
-# It is recommended to install PyTorch first, following the official instructions
-# for your specific hardware (CPU or GPU with a specific CUDA version).
-# See: https://pytorch.org/get-started/locally/
+# Install PyTorch first (see https://pytorch.org/get-started/locally/)
+pip install torch torchvision torchaudio
 
-# For example, for a recent CUDA version:
-# pip install torch torchvision torchaudio
+# Install PyTorch Geometric (see https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)
+pip install torch_geometric
 
-# Or for CPU only:
-# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-# After installing PyTorch, install PyTorch Geometric.
-# The exact command depends on your PyTorch and CUDA versions.
-# Please refer to the PyTorch Geometric installation guide:
-# https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html
-
-# Example for PyTorch 2.7 and CUDA 11.8
-# pip install torch_geometric
-
-# Then, install the other required packages:
-pip install hydra-core omegaconf wandb pytorch-lightning numpy tqdm
+# Install remaining dependencies
+pip install -r requirements.txt
 ```
 
-## How to Run
+## Usage
 
-The main entry point for this project is `src/run.py`. It uses `hydra` for configuration management. Hydra is a broadly used and highly respected so I recommend using it. You can find a guide to it here https://medium.com/@jennytan5522/introduction-to-hydra-configuration-for-python-646e1dd4d1e9.
-
-To run the code, execute the following command from the root of the project:
+Training uses Hydra for configuration:
 
 ```bash
+# Run with default config
 python src/run.py
+
+# Specify model and trainer
+python src/run.py model=dimenetpp trainer=mean-teacher
+
+# Override hyperparameters
+python src/run.py trainer.train.total_epochs=100 trainer.init.ema_decay=0.999
 ```
 
-You can override the default configuration by passing arguments from the command line. For example, to use a different model configuration:
+Available models: `gcn`, `gin`, `schnet`, `dimenetpp`
 
-```bash
-python src/run.py model=gcn
+Available trainers: `mean-teacher`, `n-cps`, `consistency-aug`, `semi-supervised-ensemble`
+
+## Reproducing Results
+
+Run the notebook `reproduce_results.ipynb` to reproduce our best results (Val MSE: 0.0124, Test MSE: 0.0133) using the pretrained model checkpoint.
+
+## Project Structure
+
 ```
-
-The configuration files are located in the `configs/` directory.
-
-## Improving the predictive accuracy
-There are many ways to improve the GNN. Please try to get the validation error (MSE) as low as possible. I have not implemented the code to run on the test data. That is for you to do, but please wait until you have the final model.
-Here are some great resources:
-- Try different GNN architectures and layers see (https://pytorch-geometric.readthedocs.io/en/latest/modules/nn.html)
-- Try different optimizers and schedulers
-- Tune hyperparameters (especially learning rate, layers, and hidden units)
-- Use advanced regularization techniques such as https://openreview.net/forum?id=xkljKdGe4E#discussion
-- You can try changing the generated features of the dataloader
-
+├── configs/          # Hydra configuration files
+│   ├── model/        # Model architectures
+│   ├── trainer/      # Training methods
+│   └── dataset/      # Dataset settings
+├── src/
+│   ├── run.py        # Main entry point
+│   ├── models.py     # GNN model definitions
+│   ├── trainer.py    # Semi-supervised trainers
+│   └── qm9.py        # Data loading
+└── reproduce_results.ipynb
+```
